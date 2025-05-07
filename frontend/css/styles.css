@@ -1,0 +1,14 @@
+/* klyja/frontend/css/style.css */
+body {
+	font-family: sans-serif;
+	padding: 20px;
+	background-color: #f4f4f4;
+}
+
+h1 {
+	color: #333;
+}
+
+#viewer-container {
+	background-color: #ffffff;
+}

@@ -1,0 +1,27 @@
+# klyja/backend/Cargo.toml
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"                # The web framework
+tokio = { version = "1", features = ["full"] } # Async runtime
+tower-http = { version = "0.5", features = ["fs", "trace", "cors"] } # For static file serving, logging, CORS
+tracing = "0.1"             # Logging framework
+tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Logging setup
+serde = { version = "1", features = ["derive"] } # Serialization/Deserialization (for JSON APIs later)
+serde_json = "1"            # JSON support
+
+# Database dependencies (add features as needed)
+diesel = { version = "2.1", features = ["postgres", "r2d2", "chrono"] } # ORM, connection pooling, date/time types
+diesel_migrations = { version = "2.1", features = ["postgres"] } # Embedded migrations
+dotenvy = "0.15"            # For loading .env file
+chrono = { version = "0.4", features = ["serde"] } # Date/time handling
+
+prost = "0.12"
+bytes = "1"
+tower = "0.5.2"
+
+[build-dependencies]
+prost-build = "0.12"

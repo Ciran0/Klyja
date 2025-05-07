@@ -1,0 +1,23 @@
+# klyja/geco/Cargo.toml
+[package]
+name = "geco"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"] # Needed for WASM library
+
+[dependencies]
+wasm-bindgen = "0.2" # Core library for JS <-> Rust communication
+prost = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1", features = ["v4", "wasm-bindgen"] }
+getrandom = { version = "0.2", features = ["js"] } # Explicitly enable "js" feature for wasm support
+
+# Optional: Add logging to the browser console from Rust/WASM
+# console_error_panic_hook = { version = "0.1", optional = true }
+# web-sys = { version = "0.3", features = ['console'], optional = true }
+
+[build-dependencies]
+prost-build = "0.12"

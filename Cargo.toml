@@ -1,0 +1,22 @@
+# klyja/Cargo.toml
+[workspace]
+resolver = "2"
+members = [
+    "backend",
+    "geco",
+]
+
+# Optional: Specify common settings for all workspace members
+[workspace.package]
+version = "0.1.0"
+edition = "2021" # Use the latest Rust edition
+
+[workspace.dependencies]
+# Add dependencies shared by both backend and geco if any later
+
+# Default profile settings (can be overridden)
+[profile.release]
+lto = true          # Enable Link Time Optimization for smaller/faster release builds
+codegen-units = 1   # Optimize for performance (slower compile time)
+panic = 'abort'     # Abort on panic for smaller binaries (optional)
+strip = true        # Strip debug symbols (smaller binary)

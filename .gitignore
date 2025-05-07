@@ -1,0 +1,14 @@
+# Ignore generated protobuf files
+backend/src/protobuf_gen/
+geco/src/protobuf_gen/
+
+# Ignore Rust build artifacts
+target/
+**/target/
+
+# Ignore WASM build artifacts (if not checked in)
+geco/pkg/
+
+# Ignore environment files
+.env
+.env.example

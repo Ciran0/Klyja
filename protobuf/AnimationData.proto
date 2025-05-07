@@ -1,0 +1,45 @@
+// klyja/protobuf/AnimationData.proto
+syntax = "proto3";
+
+// Define a package name, ideally including a version
+package klyja.map_animation.v1; // Use project name and version
+
+// Represents a 3D point coordinate.
+message Point {
+  float x = 1;
+  float y = 2;
+  optional float z = 3; // Optional Z coordinate
+}
+
+// Represents a 3D movement vector.
+message Vector {
+  float dx = 1;
+  float dy = 2;
+  optional float dz = 3; // Optional Z vector component
+}
+
+// Represents the trajectory of a single point.
+message AnimatedPoint {
+  string point_id = 1;          // Unique ID for the point
+  Point initial_position = 2; // Starting position
+  repeated Vector movements = 3;// Sequence of movement vectors
+}
+
+// Represents a single polygon feature.
+message Polygon {
+  string polygon_id = 1;            // Unique ID for the polygon
+  repeated AnimatedPoint points = 2;// Vertices (potentially animated)
+  map<string, string> properties = 3; // Optional key-value properties
+}
+
+// Top-level message representing the entire saved map animation.
+message MapAnimation {
+  string animation_id = 1; // Unique ID for the saved instance (maybe UUID later)
+  string name = 2;         // User-defined name for the animation
+  int32 total_frames = 3;  // Duration/interpretation hint for movements
+  repeated Polygon polygons = 4; // All polygons in the animation
+
+  // Optional metadata can be added later
+  // google.protobuf.Timestamp created_at = 5;
+  // string description = 6;
+}

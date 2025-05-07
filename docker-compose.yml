@@ -1,0 +1,22 @@
+# klyja/docker-compose.yml
+version: '3.8'
+services:
+  postgres_db:
+    image: postgres:14 # Use a specific PostgreSQL version
+    container_name: klyja_postgres # Give the container a specific name
+    environment:
+      # These variables are used by the postgres image on first run
+      POSTGRES_USER: ${DB_USER:-user} # Default to 'user' if DB_USER not set in .env
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password} # Default to 'password'
+      POSTGRES_DB: ${DB_NAME:-klyja_db} # Default to 'klyja_db'
+    ports:
+      # Map host port (left) to container port (right)
+      # Use DB_PORT from .env, default to 5432
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Persist database data even if container is removed
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped # Keep container running unless explicitly stopped
+
+volumes:
+  postgres_data: # Define the named volume used above

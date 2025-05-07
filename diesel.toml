@@ -1,0 +1,12 @@
+# klyja/diesel.toml
+# Configuration for diesel_cli
+
+[print_schema]
+# Location of the generated schema file, relative to diesel.toml (project root)
+file = "backend/src/schema.rs"
+# Filter specific tables if needed (optional)
+# filter = { only_tables = ["animations", "__diesel_schema_migrations"] }
+
+# Optional: Configure migration generation settings
+# [migrations_directory]
+# dir = "migrations" # Default location, relative to diesel.toml
