@@ -14,7 +14,24 @@ use axum::{
 use diesel::prelude::*;
 use prost::Message; // For decoding protobuf
 
-/// Handler to save animation data received as Protobuf bytes
+/// Save a new animation.
+///
+/// The request body should be the raw binary Protobuf data representing the MapAnimation.
+#[utoipa::path(
+    post,
+    path = "/api/save_animation",
+    tag = "Animations", // Group this endpoint under an "Animations" tag
+    request_body(
+        content = bytes, // Using `bytes` special type for utoipa for raw binary
+        description = "Binary Protobuf data for the MapAnimation",
+        content_type = "application/octet-stream"
+    ),
+    responses(
+        (status = 201, description = "Animation saved successfully"),
+        (status = 400, description = "Invalid Protobuf data provided", body = String), // Example error response
+        (status = 500, description = "Internal server error", body = String)
+    )
+)]
 pub async fn save_animation_handler(
     State(pool): State<DbPool>, // Extract pool from state
     body: Bytes,                // Extract raw request body
@@ -66,7 +83,22 @@ pub async fn save_animation_handler(
     Ok(StatusCode::CREATED) // 201 Created is appropriate
 }
 
-/// Handler to load animation data as Protobuf bytes by ID
+/// Load an existing animation by its ID.
+///
+/// Returns the raw binary Protobuf data for the MapAnimation.
+#[utoipa::path(
+    get,
+    path = "/api/load_animation/{id}",
+    tag = "Animations",
+    params(
+        ("id" = i32, Path, description = "ID of the animation to load", example = 1)
+    ),
+    responses(
+        (status = 200, description = "Animation loaded successfully", body = bytes, content_type = "application/octet-stream"),
+        (status = 404, description = "Animation not found", body = String),
+        (status = 500, description = "Internal server error", body = String)
+    )
+)]
 pub async fn load_animation_handler(
     State(pool): State<DbPool>,    // Extract pool
     Path(animation_id): Path<i32>, // Extract ID from path /api/load_animation/:id
@@ -123,4 +155,19 @@ pub async fn load_animation_handler(
 
     // 4. Return the raw Protobuf bytes with the correct content type
     Ok((headers, animation.protobuf_data)) // Return headers and Vec<u8> body
+}
+// --- Add a handler for the health check endpoint for completeness ---
+/// Health check endpoint.
+///
+/// Returns a simple "Healthy!" message if the server is running.
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "System",
+    responses(
+        (status = 200, description = "Server is healthy", body = String, example = json!("Healthy!"))
+    )
+)]
+pub async fn health_check_handler() -> (StatusCode, String) {
+    (StatusCode::OK, "Healthy!".to_string())
 }

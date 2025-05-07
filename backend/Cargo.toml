@@ -21,7 +21,11 @@ chrono = { version = "0.4", features = ["serde"] } # Date/time handling
 
 prost = "0.12"
 bytes = "1"
-tower = "0.5.2"
+#tower = "0.5.2"
+
+utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+schemars = "0.8"
 
 [build-dependencies]
 prost-build = "0.12"
