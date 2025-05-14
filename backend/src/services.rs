@@ -1,6 +1,7 @@
 // klyja/backend/src/services.rs
 
 use crate::{
+    errors::AppError,
     models::{Animation, NewAnimation}, // We'll need these for DB interaction
     protobuf_gen::MapAnimation,        // For decoding
     schema,                            // For Diesel query building
@@ -8,7 +9,7 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    http::StatusCode, // We'll use this for the temporary error type
+    //    http::StatusCode, // We'll use this for the temporary error type
 };
 use diesel::prelude::*;
 use prost::Message; // For decoding protobuf
@@ -21,33 +22,20 @@ impl AnimationService {
     pub async fn save_animation_logic(
         pool: &DbPool, // Renamed parameter for clarity from 'body' in handler
         animation_data_bytes: Bytes,
-    ) -> Result<(), (StatusCode, String)> {
+    ) -> Result<i32, AppError> {
         tracing::info!(
             "SERVICE: Processing save_animation_logic with {} bytes",
             animation_data_bytes.len()
         );
 
         // 1. Validate by trying to decode the Protobuf data
-        let map_animation = MapAnimation::decode(animation_data_bytes.clone()) // Use the passed Bytes
-            .map_err(|e| {
-                tracing::error!("SERVICE: Protobuf decoding failed: {}", e);
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("Invalid Protobuf data: {}", e),
-                )
-            })?;
+        let map_animation = MapAnimation::decode(animation_data_bytes.clone())?; // Use the passed Bytes
 
         // 2. Get a database connection
         //    Diesel operations are blocking, so they should be run in a way that doesn't block the async executor.
         //    tokio::task::block_in_place is suitable for short blocking operations.
         //    For longer operations, tokio::task::spawn_blocking is preferred.
-        let mut conn = tokio::task::block_in_place(|| pool.get()).map_err(|e| {
-            tracing::error!("SERVICE: Failed to get DB connection: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database connection error".to_string(), // More specific message
-            )
-        })?;
+        let mut conn = tokio::task::block_in_place(|| pool.get())?;
 
         // 3. Prepare data for insertion
         let animation_name = map_animation.name.as_str(); // map_animation is from decoding
@@ -58,25 +46,19 @@ impl AnimationService {
         };
 
         // 4. Insert into database using Diesel
-        tokio::task::block_in_place(move || {
+        let saved_animation: Animation = tokio::task::block_in_place(move || {
             // `conn` and `new_animation_payload` are moved into this closure
             diesel::insert_into(schema::animations::table)
                 .values(&new_animation_payload) // Use the new variable name
-                .execute(&mut conn)
-        })
-        .map_err(|e| {
-            tracing::error!("SERVICE: Database insert failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to save animation to database".to_string(), // More specific message
-            )
+                .get_result::<Animation>(&mut conn)
         })?;
 
         tracing::info!(
-            "SERVICE: Animation '{}' saved successfully.",
-            animation_name
+            "SERVICE: Animation '{}' saved successfully with ID {}.",
+            saved_animation.name,
+            saved_animation.id
         );
-        Ok(()) // Return Ok(()) on success
+        Ok(saved_animation.id)
     }
 
     // This function will contain the business logic for loading an animation.
@@ -85,7 +67,7 @@ impl AnimationService {
     pub async fn load_animation_logic(
         pool: &DbPool,
         animation_id_to_load: i32,
-    ) -> Result<Animation, (StatusCode, String)> {
+    ) -> Result<Animation, AppError> {
         // Returns Ok(Animation)
         tracing::info!(
             "SERVICE: Processing load_animation_logic for ID: {}",
@@ -93,13 +75,7 @@ impl AnimationService {
         );
 
         // 1. Get a database connection
-        let mut conn = tokio::task::block_in_place(|| pool.get()).map_err(|e| {
-            tracing::error!("SERVICE: Failed to get DB connection: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database connection error".to_string(),
-            )
-        })?;
+        let mut conn = tokio::task::block_in_place(|| pool.get())?;
 
         // 2. Query the database using Diesel
         use crate::schema::animations::dsl::*; // Import Diesel DSL for this specific query
@@ -110,25 +86,6 @@ impl AnimationService {
                 .find(animation_id_to_load) // Use the passed ID
                 .select(Animation::as_select())
                 .first::<Animation>(&mut conn) // Specify type for .first()
-        })
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => {
-                tracing::warn!(
-                    "SERVICE: Animation with ID {} not found",
-                    animation_id_to_load
-                );
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("Animation ID {} not found", animation_id_to_load),
-                )
-            }
-            _ => {
-                tracing::error!("SERVICE: Database query failed: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to load animation from database".to_string(),
-                )
-            }
         })?;
 
         tracing::info!(
