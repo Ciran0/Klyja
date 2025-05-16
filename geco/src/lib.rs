@@ -2,10 +2,10 @@
 use prost::Message;
 use wasm_bindgen::prelude::*;
 // --- Add serde for JSON serialization ---
-use serde::{Serialize, Serializer}; // Needed for get_polygons_json
+use serde::Serialize; // Needed for get_polygons_json
 
 // --- Protobuf Includes ---
-mod protobuf_gen {
+pub mod protobuf_gen {
     // Use include! with OUT_DIR
     include!(concat!(env!("OUT_DIR"), "/klyja.map_animation.v1.rs"));
 
@@ -16,7 +16,7 @@ mod protobuf_gen {
     // If that fails, we might need prost-serde feature or manual JSON construction.
     // Update: Let's create *separate* serializable structs within Geco to avoid build script complexity for now.
 }
-use protobuf_gen::{AnimatedPoint, MapAnimation, Point, Polygon, Vector};
+use protobuf_gen::{AnimatedPoint, MapAnimation, Point, Polygon};
 
 // --- Simple Structs for JSON Serialization ---
 // Define simplified structs matching protobuf structure but with Serialize
@@ -239,3 +239,8 @@ impl Geco {
 // serde_json = "1.0"
 // uuid = { version = "1", features = ["v4", "wasm-bindgen"] }
 // --- Keep the greet function for basic testing if desired ---
+
+// Include the test module
+#[cfg(test)]
+#[path = "lib_test.rs"]
+mod tests;

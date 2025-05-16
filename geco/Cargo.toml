@@ -21,3 +21,8 @@ getrandom = { version = "0.2", features = ["js"] } # Explicitly enable "js" feat
 
 [build-dependencies]
 prost-build = "0.12"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"  # For testing WASM code
+js-sys = "0.3"             # JavaScript interop utilities for testing
+assert_matches = "1.5"     # For more readable assertions

@@ -29,5 +29,15 @@ schemars = "0.8"
 
 r2d2 = "0.8"
 
+[dev-dependencies]
+tokio-test = "0.4"          # Utilities for testing async code
+axum-test = "14.0"          # Testing utilities for Axum
+mockall = "0.12"            # For creating mock objects
+diesel-async = { version = "0.4", features = ["postgres"] } # For testing with async DB operations
+assert_matches = "1.5"      # More ergonomic assertions
+uuid = { version = "1.6", features = ["v4"] } # For generating test IDs
+rand = "0.8"                # For generating random test data
+rstest = "0.18"             # Parameterized tests
+
 [build-dependencies]
 prost-build = "0.12"
