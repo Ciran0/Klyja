@@ -12,3 +12,6 @@ geco/pkg/
 # Ignore environment files
 .env
 .env.example
+
+#ignore node modules
+frontend/node_modules/
