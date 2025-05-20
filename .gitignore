@@ -15,3 +15,5 @@ geco/pkg/
 
 #ignore node modules
 frontend/node_modules/
+coverage_reports
+frontend/package-lock.json
