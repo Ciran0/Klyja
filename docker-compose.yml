@@ -12,7 +12,7 @@ services:
     ports:
       # Map host port (left) to container port (right)
       # Use DB_PORT from .env, default to 5432
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       # Persist database data even if container is removed
       - postgres_data:/var/lib/postgresql/data

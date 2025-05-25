@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
   test: {
@@ -10,6 +10,11 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: ['**/node_modules/**', '**/tests/**', '**/*.config.js']
+    }
+  },
+  resolve: {
+    alias: {
+      '/pkg/geco.js': '/tests/mocks/geco-mock.js'
     }
   }
 });

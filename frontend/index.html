@@ -16,8 +16,14 @@
         }
     }
         </script>
-        <script type="module" src="/js/main.js"></script>
-        <style> /* Add some basic layout styles */
+        <script type="module">
+        import { createAppState } from '/js/app-state.js';
+        import '/js/main.js';
+        
+        // Make appState function available globally for Alpine
+        window.appState = createAppState;
+        </script>
+        <style>
         body { display: flex; flex-direction: column; height: 100vh; margin: 0; }
         .main-content { display: flex; flex: 1; overflow: hidden; }
         #viewer-container { flex-grow: 1; border-right: 1px solid #ccc; min-width: 300px; }
@@ -59,99 +65,5 @@
                 <div class="status-message" x-text="statusMessage"></div>
             </aside>
         </div>
-        <script>
-        function appState() {
-            return {
-                currentAnimationName: 'Untitled',
-                wasmAnimationName: 'Loading...', // Will be updated from WASM
-                newPolygonId: 'poly1',
-                animationIdToLoad: '',
-                statusMessage: 'App Loaded.',
-
-                init() {
-                console.log("Alpine init() called.");
-                this.statusMessage = 'Alpine Initialized. Waiting for WASM...';
-                // Use a small delay or check if gecoInstance exists, as WASM init is async
-                // A safer way might involve events, but polling/delay is simpler for now
-                const checkWasm = setInterval(() => {
-                    if (window.gecoInstance) {
-                        clearInterval(checkWasm);
-                        console.log("WASM ready, updating initial Alpine state.");
-                        this.wasmAnimationName = window.gecoInstance.get_animation_name();
-                        this.currentAnimationName = this.wasmAnimationName; // Sync input field
-                        this.statusMessage = 'Ready.';
-                        // Optional: Trigger initial render again if needed
-                        // if(window.renderWasmState) window.renderWasmState();
-                    } else {
-                         console.log("Alpine waiting for gecoInstance...");
-                    }
-                }, 100); // Check every 100ms
-                 // Timeout failsafe
-                 setTimeout(() => {
-                     if (!window.gecoInstance) {
-                         clearInterval(checkWasm);
-                         this.statusMessage = "Error: WASM failed to initialize in time.";
-                         console.error("WASM Timed out");
-                     }
-                 }, 5000); // Give it 5 seconds
-                },
-                // --- Methods to interact with WASM/Backend (called by buttons) ---
-                // Note: gecoInstance needs to be globally accessible or passed around.
-                // We'll make it accessible via window for simplicity here, but better patterns exist.
-                updateWasmName(newName) {
-                    if (window.gecoInstance) {
-                        window.gecoInstance.set_animation_name(newName);
-                        this.wasmAnimationName = window.gecoInstance.get_animation_name(); // Update display
-                        this.statusMessage = `Set WASM name to ${this.wasmAnimationName}`;
-                    } else { this.statusMessage = 'Error: Geco instance not ready.'; }
-                },
-                addPolygonPlaceholder() {
-                    if (window.gecoInstance && this.newPolygonId) {
-                         // Add a polygon centered at (0, ~radius, 0) - top pole for simplicity
-                        window.gecoInstance.add_static_polygon(this.newPolygonId, 0.0, 5.0); // Assume radius 5 for now
-                        this.statusMessage = `Added polygon ${this.newPolygonId}. Click sphere to add points.`;
-                         // Trigger re-render in Three.js (needs function call)
-                         if(window.renderWasmState) window.renderWasmState();
-                         this.newPolygonId = `poly${parseInt(this.newPolygonId.replace('poly',''))+1}`; // Increment default ID
-                    } else { this.statusMessage = 'Error: Geco instance not ready or missing polygon ID.'; }
-                },
-                saveAnimation() {
-                    this.statusMessage = 'Saving...';
-                    if (window.saveWasmData) {
-                        window.saveWasmData()
-                            .then(() => { this.statusMessage = 'Save successful!'; })
-                            .catch(err => { this.statusMessage = `Save failed: ${err.message}`; });
-                    } else { this.statusMessage = 'Error: Save function not ready.'; }
-                },
-                            loadAnimation() {
-                    const id = parseInt(this.animationIdToLoad);
-                    if (isNaN(id)) {
-                        this.statusMessage = 'Please enter a valid number ID to load.';
-                        return;
-                    }
-                    this.statusMessage = `Loading animation ID: ${id}...`;
-
-                    if (window.loadWasmData) {
-                        window.loadWasmData(id)
-                            .then((newAnimationName) => { // <<-- loadAnimationData now returns the name
-                                // 'this' here correctly refers to the Alpine component's data
-                                this.wasmAnimationName = newAnimationName;
-                                this.currentAnimationName = newAnimationName; // Sync input field
-                                this.statusMessage = `Load successful! (ID: ${id}, Name: '${this.wasmAnimationName}')`;
-                                console.log(`Alpine UI updated with new name: ${this.wasmAnimationName}`);
-                            })
-                            .catch(err => {
-                                // This catch block now handles errors from fetch, WASM load, or rendering.
-                                this.statusMessage = `Load failed: ${err.message}`;
-                                console.error("Error in loadAnimation (Alpine handler):", err);
-                            });
-                    } else {
-                        this.statusMessage = 'Error: Load function (window.loadWasmData) is not ready.';
-                        console.error('window.loadWasmData is not defined.');
-                    }
-                }
-            }
-        }
-        </script>
     </body>
 </html>

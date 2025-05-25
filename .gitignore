@@ -17,3 +17,4 @@ geco/pkg/
 frontend/node_modules/
 coverage_reports
 frontend/package-lock.json
+Cargo.lock
