@@ -14,7 +14,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '/pkg/geco.js': '/tests/mocks/geco-mock.js'
+      'geco/pkg/geco.js': '/tests/mocks/geco-mock.js'
     }
   }
 });

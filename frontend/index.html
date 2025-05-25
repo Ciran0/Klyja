@@ -4,25 +4,18 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>klyja - Spherical Map Animation</title>
-        <link rel="stylesheet" href="/css/style.css">
-        <script defer
-                src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+        <link rel="stylesheet" href="/css/styles.css">
         <script src="https://unpkg.com/htmx.org@latest/dist/htmx.min.js"></script>
         <script type="importmap">
     {
         "imports": {
             "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+            "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/",
+            "geco/pkg/geco.js": "/pkg/geco.js"
         }
     }
         </script>
-        <script type="module">
-        import { createAppState } from '/js/app-state.js';
-        import '/js/main.js';
-        
-        // Make appState function available globally for Alpine
-        window.appState = createAppState;
-        </script>
+        <script type="module" src="/js/main.js"></script>
         <style>
         body { display: flex; flex-direction: column; height: 100vh; margin: 0; }
         .main-content { display: flex; flex: 1; overflow: hidden; }
@@ -33,36 +26,27 @@
         </style>
     </head>
     <body>
-        <div class="main-content" x-data="appState()">
+        <div class="main-content">
             <div id="viewer-container"></div>
             <aside id="controls-panel">
                 <h3>Controls</h3>
-                <label for="anim-name">Animation Name:</label>
-                <input type="text"
-                       id="anim-name"
-                       x-model="currentAnimationName"
-                       @input="updateWasmName($event.target.value)">
+                <label for="anim-name-input">Animation Name:</label>
+                <input type="text" id="anim-name-input" placeholder="Untitled Animation">
                 <p style="font-size: 0.8em;">
-                    Current WASM Name: <span x-text="wasmAnimationName"></span>
+                    Current WASM Name: <span id="wasm-name-span">Loading...</span>
                 </p>
-                <label for="poly-id">New Polygon ID:</label>
-                <input type="text"
-                       id="poly-id"
-                       x-model="newPolygonId"
-                       placeholder="e.g., poly1">
-                <button @click="addPolygonPlaceholder()">Add Test Polygon</button>
+                <label for="poly-id-input">New Polygon ID:</label>
+                <input type="text" id="poly-id-input" placeholder="e.g., poly1">
+                <button id="add-poly-button">Add Test Polygon</button>
                 <p style="font-size: 0.8em;">Click on sphere to add points to the *last added* polygon.</p>
                 <hr>
-                <button id="save-button" @click="saveAnimation">Save Animation</button>
+                <button id="save-button">Save Animation</button>
                 <hr>
-                <label for="load-id">Animation ID to Load:</label>
-                <input type="number"
-                       id="load-id"
-                       x-model="animationIdToLoad"
-                       placeholder="Enter ID (e.g., 1)">
-                <button id="load-button" @click="loadAnimation">Load Animation</button>
+                <label for="load-id-input">Animation ID to Load:</label>
+                <input type="number" id="load-id-input" placeholder="Enter ID (e.g., 1)">
+                <button id="load-button">Load Animation</button>
                 <hr>
-                <div class="status-message" x-text="statusMessage"></div>
+                <div id="status-message-div" class="status-message">App starting...</div>
             </aside>
         </div>
     </body>
