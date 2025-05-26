@@ -1,6 +1,6 @@
 // klyja/backend/src/handlers.rs
 use crate::{
-    errors::{AppError, ErrorResponsePayload, SuccessfulSaveResponsePayload},
+    errors::{AppError, SuccessfulSaveResponsePayload},
     //    models::{Animation, NewAnimation},
     //    protobuf_gen::MapAnimation,
     //    schema,

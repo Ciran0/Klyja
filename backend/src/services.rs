@@ -1,26 +1,19 @@
-// klyja/backend/src/services.rs
-
+// backend/src/services.rs
 use crate::{
     errors::AppError,
-    models::{Animation, NewAnimation}, // We'll need these for DB interaction
-    protobuf_gen::MapAnimation,        // For decoding
-    schema,                            // For Diesel query building
-    DbPool,                            // The database pool type from main.rs
+    models::{Animation, NewAnimation},
+    protobuf_gen::MapAnimation,
+    schema, DbPool,
 };
-use axum::{
-    body::Bytes,
-    //    http::StatusCode, // We'll use this for the temporary error type
-};
+use axum::body::Bytes;
 use diesel::prelude::*;
-use prost::Message; // For decoding protobuf
+use prost::Message;
 
-// We can group our service functions, conceptually, using a struct.
-// It doesn't need to hold any data for now.
 pub struct AnimationService;
 
 impl AnimationService {
     pub async fn save_animation_logic(
-        pool: &DbPool, // Renamed parameter for clarity from 'body' in handler
+        pool: &DbPool, // Keep as reference
         animation_data_bytes: Bytes,
     ) -> Result<i32, AppError> {
         tracing::info!(
@@ -28,71 +21,72 @@ impl AnimationService {
             animation_data_bytes.len()
         );
 
-        // 1. Validate by trying to decode the Protobuf data
-        let map_animation = MapAnimation::decode(animation_data_bytes.clone())?; // Use the passed Bytes
+        let map_animation = MapAnimation::decode(animation_data_bytes.clone())?;
 
-        // 2. Get a database connection
-        //    Diesel operations are blocking, so they should be run in a way that doesn't block the async executor.
-        //    tokio::task::block_in_place is suitable for short blocking operations.
-        //    For longer operations, tokio::task::spawn_blocking is preferred.
-        let mut conn = tokio::task::block_in_place(|| pool.get())?;
+        // Clone the pool and other necessary data to move into the blocking task
+        let pool_clone = pool.clone();
+        let name_for_blocking_task = map_animation.name.clone(); // Renamed for clarity
+        let data_for_blocking = animation_data_bytes.clone();
 
-        // 3. Prepare data for insertion
-        let animation_name = map_animation.name.as_str(); // map_animation is from decoding
-        let new_animation_payload = NewAnimation {
-            // Renamed variable for clarity
-            name: animation_name,
-            protobuf_data: &animation_data_bytes, // Use the original raw bytes slice passed to this function
-        };
+        let saved_animation_id = tokio::task::spawn_blocking(move || {
+            let mut conn = pool_clone.get().map_err(AppError::DatabasePool)?;
+            let new_animation_payload = NewAnimation {
+                name: &name_for_blocking_task, // Use the string cloned for the task
+                protobuf_data: &data_for_blocking,
+            };
 
-        // 4. Insert into database using Diesel
-        let saved_animation: Animation = tokio::task::block_in_place(move || {
-            // `conn` and `new_animation_payload` are moved into this closure
             diesel::insert_into(schema::animations::table)
-                .values(&new_animation_payload) // Use the new variable name
+                .values(&new_animation_payload)
                 .get_result::<Animation>(&mut conn)
-        })?;
+                .map_err(AppError::DatabaseQuery)
+                .map(|anim| anim.id)
+        })
+        .await
+        .map_err(|join_err| {
+            AppError::Internal(format!("Tokio spawn_blocking join error: {}", join_err))
+        })??;
 
         tracing::info!(
             "SERVICE: Animation '{}' saved successfully with ID {}.",
-            saved_animation.name,
-            saved_animation.id
+            map_animation.name, // Use the original map_animation.name for logging here
+            saved_animation_id
         );
-        Ok(saved_animation.id)
+        Ok(saved_animation_id)
     }
 
-    // This function will contain the business logic for loading an animation.
-    // It takes the database pool and the animation_id.
-    // For now, it will return Ok(Animation) on success, or an Err with StatusCode and String on failure.
     pub async fn load_animation_logic(
         pool: &DbPool,
         animation_id_to_load: i32,
     ) -> Result<Animation, AppError> {
-        // Returns Ok(Animation)
         tracing::info!(
             "SERVICE: Processing load_animation_logic for ID: {}",
             animation_id_to_load
         );
 
-        // 1. Get a database connection
-        let mut conn = tokio::task::block_in_place(|| pool.get())?;
+        let pool_clone = pool.clone();
 
-        // 2. Query the database using Diesel
-        use crate::schema::animations::dsl::*; // Import Diesel DSL for this specific query
+        let loaded_animation = tokio::task::spawn_blocking(move || {
+            let mut conn = pool_clone.get().map_err(AppError::DatabasePool)?; // Get conn and map r2d2 error
+            use crate::schema::animations::dsl::*;
 
-        let loaded_animation = tokio::task::block_in_place(move || {
-            // `conn` and `animation_id_to_load` are moved
-            animations
-                .find(animation_id_to_load) // Use the passed ID
+            let query_result: Result<Animation, diesel::result::Error> = animations
+                .find(animation_id_to_load)
                 .select(Animation::as_select())
-                .first::<Animation>(&mut conn) // Specify type for .first()
-        })?;
+                .first::<Animation>(&mut conn);
+
+            // Explicitly convert diesel::result::Error to AppError using your From trait impl
+            query_result.map_err(AppError::from)
+        })
+        .await // Wait for the blocking task
+        .map_err(|join_err| {
+            AppError::Internal(format!("Tokio spawn_blocking join error: {}", join_err))
+        })??; // First ? for JoinError, second ? for AppError from the closure
 
         tracing::info!(
             "SERVICE: Animation '{}' (ID: {}) loaded successfully.",
             loaded_animation.name,
             animation_id_to_load
         );
-        Ok(loaded_animation) // Return the loaded Animation struct on success
+        Ok(loaded_animation)
     }
 }
