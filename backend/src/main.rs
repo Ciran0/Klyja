@@ -117,7 +117,14 @@ async fn main() {
         .expect("Failed to get project root directory");
 
     // Construct absolute paths to static asset directories
-    let frontend_path = project_root.join("frontend");
+
+    // Determine frontend path based on an environment variable or build flag
+    // For example, you could use an environment variable like `APP_ENV=production`
+    let frontend_path = if env::var("APP_ENV").unwrap_or_default() == "production" {
+        project_root.join("frontend/dist")
+    } else {
+        project_root.join("frontend") // Development serves raw files
+    };
     let wasm_pkg_path = project_root.join("geco/pkg");
 
     tracing::info!(

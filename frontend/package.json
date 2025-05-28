@@ -11,7 +11,7 @@
     "lint": "eslint js/**/*.js",
     "format": "prettier --write js/**/*.js",
     "test:ui": "vitest --ui",
-    "build": "echo 'No build step required for this project'"
+    "build": "vite build"
   },
   "devDependencies": {
     "@testing-library/dom": "^9.3.3",

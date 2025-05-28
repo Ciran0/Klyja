@@ -15,6 +15,7 @@ geco/pkg/
 
 #ignore node modules
 frontend/node_modules/
+frontend/dist/
 coverage_reports
 frontend/package-lock.json
 Cargo.lock

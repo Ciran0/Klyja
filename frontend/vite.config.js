@@ -1,6 +1,13 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      external: [
+        'geco/pkg/geco.js'
+      ]
+    }
+  },
   test: {
     environment: 'happy-dom',
     include: ['**/*.{test,spec}.js'],
