@@ -51,7 +51,7 @@ RUN cd backend && \
     if [ ${BUILD_EXIT_CODE} -ne 0 ]; then exit ${BUILD_EXIT_CODE}; fi # Ensure Docker step fails if cargo build failed
 
 # Stage 4: Final Runtime Image
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 # Install any runtime dependencies (e.g., ca-certificates for HTTPS, libpq for diesel if not static)
