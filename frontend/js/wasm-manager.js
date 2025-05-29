@@ -1,13 +1,7 @@
 // frontend/js/wasm-manager.js
 // Use dynamic import for better test compatibility
 const loadWasm = async () => {
-  if (typeof window !== 'undefined' && window.location.protocol !== 'file:') {
-    // Browser environment - use absolute path
-    return import('geco/pkg/geco.js');
-  } else {
-    // Test environment - this will be mocked
-    return import('../../geco/pkg/geco.js');
-  }
+  return import('geco/pkg/geco.js');
 };
 
 export class WasmManager {
