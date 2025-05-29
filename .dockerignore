@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Node
+frontend/node_modules
+node_modules
+
+# Rust
+target
+backend/target
+geco/target
+
+# IDE/Editor specific
+.vscode
+.idea
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Other
+README.md
+TESTING.md
+# Add any other files/folders not needed in the image
