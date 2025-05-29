@@ -58,7 +58,7 @@ jobs:
           version: '25.x' # Or your required version
 
       - name: Install headless browser dependencies for wasm-pack test
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev librsvg2-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Cache Rust dependencies (Cargo registry, index, target)
         uses: Swatinem/rust-cache@v2
@@ -80,7 +80,7 @@ jobs:
 
       - name: Run Geco (WASM) Rust Tests
         working-directory: ./geco
-        run: cargo test -- --lib --verbose
+        run: cargo test --lib --verbose
 
       - name: Run Geco (WASM) Browser Tests (Headless)
         working-directory: ./geco

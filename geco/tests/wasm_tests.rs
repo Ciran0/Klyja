@@ -1,11 +1,11 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    use assert_matches::assert_matches;
+    //use assert_matches::assert_matches;
     use wasm_bindgen_test::*;
 
     use geco::Geco;
-    use prost::Message;
-    use wasm_bindgen::JsValue;
+    //use prost::Message;
+    //use wasm_bindgen::JsValue;
 
     // Configure test environment for browser-like testing
     wasm_bindgen_test_configure!(run_in_browser);
@@ -115,4 +115,3 @@ mod wasm_tests {
         assert_eq!(polygons_json, "[]");
     }
 }
-

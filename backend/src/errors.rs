@@ -27,6 +27,7 @@ pub enum AppError {
     // For when a requested resource is not found (more specific than just a general DB error)
     NotFound(String),
     // For other client-side errors, e.g. invalid input not caught by protobuf
+    #[allow(dead_code)]
     BadRequest(String),
     // For internal server errors that don't fit other categories
     Internal(String),
