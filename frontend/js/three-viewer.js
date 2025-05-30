@@ -70,7 +70,7 @@ export class ThreeViewer {
     const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 64, 32);
     const sphereMaterial = new THREE.MeshStandardMaterial({
       color: 0x0077ff,
-      wireframe: false,
+      wireframe: true,
       metalness: 0.2,
       roughness: 0.7,
     });
@@ -147,13 +147,13 @@ renderFeatures(featuresData) {
 
       const threePoints = feature.points.map(p => new THREE.Vector3(p.x, p.y, p.z || 0));
 
-      if (feature.feature_type === "POLYLINE") {
+      if (feature.feature_type === "Polyline") {
         if (threePoints.length < 2) return; // Need at least 2 points for a line
         const geometry = new THREE.BufferGeometry().setFromPoints(threePoints);
         const line = new THREE.Line(geometry, polylineMaterial.clone()); // Clone material if changing properties per line
         this.scene.add(line);
         this.visualObjects.push(line);
-      } else if (feature.feature_type === "POLYGON") {
+      } else if (feature.feature_type === "Polygon") {
         if (threePoints.length < 2) return; // Need at least 2 for LineLoop, 3 for a visual polygon
         
         // Option 1: Draw as a line loop (outline)
