@@ -130,27 +130,39 @@ export class ThreeViewer {
     this.visualObjects = [];
   }
 
-  renderPolygons(polygonsData) {
-    this.clearVisualObjects();
+renderFeatures(featuresData) {
+    this.clearVisualObjects(); // Clear previously rendered objects
 
-    const pointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const pointGeometry = new THREE.SphereGeometry(0.1, 16, 8);
+    // Define materials (can be more sophisticated later)
+    const polylineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }); // Linewidth might not work on all systems with WebGLRenderer
+    const polygonLineMaterial = new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 1 });
+    // For filled polygons, you'd use MeshStandardMaterial or similar
+    // const polygonFillMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
 
-    polygonsData.forEach(polygon => {
-      if (polygon.points) {
-        polygon.points.forEach(animatedPoint => {
-          if (animatedPoint.initial_position) {
-            const pos = animatedPoint.initial_position;
-            const pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
-            pointMesh.position.set(pos.x, pos.y, pos.z || 0);
-            this.scene.add(pointMesh);
-            this.visualObjects.push(pointMesh);
-          }
-        });
+
+    featuresData.forEach(feature => {
+      if (!feature.points || feature.points.length < 1) {
+        return; // Nothing to render for this feature
+      }
+
+      const threePoints = feature.points.map(p => new THREE.Vector3(p.x, p.y, p.z || 0));
+
+      if (feature.feature_type === "POLYLINE") {
+        if (threePoints.length < 2) return; // Need at least 2 points for a line
+        const geometry = new THREE.BufferGeometry().setFromPoints(threePoints);
+        const line = new THREE.Line(geometry, polylineMaterial.clone()); // Clone material if changing properties per line
+        this.scene.add(line);
+        this.visualObjects.push(line);
+      } else if (feature.feature_type === "POLYGON") {
+        if (threePoints.length < 2) return; // Need at least 2 for LineLoop, 3 for a visual polygon
+        
+        // Option 1: Draw as a line loop (outline)
+        const geometry = new THREE.BufferGeometry().setFromPoints(threePoints);
+        const lineLoop = new THREE.LineLoop(geometry, polygonLineMaterial.clone());
+        this.scene.add(lineLoop);
+        this.visualObjects.push(lineLoop);
       }
     });
-
-    console.log(`Rendered ${this.visualObjects.length} points.`);
   }
 
   dispose() {
