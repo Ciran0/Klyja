@@ -26,3 +26,14 @@ prost-build = "0.12"
 wasm-bindgen-test = "0.3"  # For testing WASM code
 js-sys = "0.3"             # JavaScript interop utilities for testing
 assert_matches = "1.5"     # For more readable assertions
+
+[package.metadata.wasm-pack.profile.dev]
+# For `wasm-pack build` or `wasm-pack build --dev`
+# The "-O" flag is for optimization. wasm-opt uses it by default for dev profile.
+# Add "--enable-bulk-memory" to it.
+wasm-opt = ["-O", "--enable-bulk-memory"]
+
+[package.metadata.wasm-pack.profile.release]
+# For `wasm-pack build --release`
+# Also add "--enable-bulk-memory" here.
+wasm-opt = ["-O", "--enable-bulk-memory"] # Or higher optimization like -O2, -O3, -Os, -Oz if desired for release

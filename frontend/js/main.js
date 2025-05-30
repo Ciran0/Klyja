@@ -269,11 +269,46 @@ export class KlyjaApp {
         }
     }
 
-    // saveAnimationWithUIUpdate, loadAnimationWithUIUpdate, dispose: remain largely the same
-    // just ensure they use the updated WasmManager methods if any signatures changed for save/load.
-    // For now, getAnimationProtobuf and loadAnimationProtobuf in WasmManager have the same JS signature.
-    // So save/load logic in main.js might not need changes yet for this iteration.
-    async saveAnimationWithUIUpdate() { /* ... as before ... */ }
+    async saveAnimationWithUIUpdate() {
+        this.updateStatus('Saving animation...');
+        if (!this.wasmManager || !this.wasmManager.initialized || !this.apiClient) {
+            this.updateStatus('Cannot save: components not ready.');
+            console.error('Attempted to save when components were not ready.');
+            return; // Or throw an error
+        }
+
+        try {
+            const currentNameInUI = this.dom.animNameInput.value;
+            if (this.wasmManager.getAnimationName() !== currentNameInUI) {
+                this.wasmManager.setAnimationName(currentNameInUI);
+                this.uiState.currentAnimationName = currentNameInUI;
+                this.uiState.wasmAnimationName = currentNameInUI; // Update UI state
+            }
+            const protobufData = this.wasmManager.getAnimationProtobuf();
+            if (!protobufData || protobufData.length === 0) {
+                this.updateStatus('Save failed: No animation data to save.');
+                console.error('Save failed: protobufData is empty.');
+                return;
+            }
+
+            const result = await this.apiClient.saveAnimation(protobufData);
+            this.updateStatus(`Save successful! Animation ID: ${result.id}`);
+            console.log('Save successful:', result);
+
+            if (this.dom.loadIdInput) {
+                this.dom.loadIdInput.value = result.id;
+                this.uiState.animationIdToLoad = result.id.toString();
+            }
+            this.syncUIToState(); // Reflect potential changes in UI state
+            return result;
+
+        } catch (error) {
+            this.updateStatus(`Save failed: ${error.message || 'Unknown error'}`);
+            console.error('Save failed:', error);
+            throw error; // Re-throw if you want calling code to handle it further
+        }
+    }
+
     async loadAnimationWithUIUpdate() { 
         // ... as before, but after load, make sure to sync totalFrames and currentFrame to UI
         // Example addition after successful load:
