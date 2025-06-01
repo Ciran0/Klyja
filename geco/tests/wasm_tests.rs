@@ -1,7 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
     use geco::Geco; // Assuming Geco is in crate root for wasm_tests too
-    use wasm_bindgen::JsValue;
+                    //use wasm_bindgen::JsValue;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

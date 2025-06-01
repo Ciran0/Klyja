@@ -1,7 +1,7 @@
 //! This module contains basic tests for geco-specific types.
 
 // Use geco's own protobuf definitions
-use geco::protobuf_gen::{Feature, MapAnimation}; // Assuming 'Feature' is what 'Polygon' became
+use geco::protobuf_gen::MapAnimation; // Assuming 'Feature' is what 'Polygon' became
 
 #[test]
 fn test_geco_map_animation_creation() {
