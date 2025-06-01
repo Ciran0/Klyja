@@ -8,6 +8,9 @@ mod feature_animation_tests {
         PositionKeyframe,
     };
     use crate::Geco;
+    use crate::RenderableFeatureJson;
+    use nalgebra::Vector3;
+    // wasm_bindgen::JsValue is not typically used directly in #[test] unless also cfg(target_arch="wasm32")
 
     fn create_test_geco() -> Geco {
         Geco::new()
@@ -19,75 +22,133 @@ mod feature_animation_tests {
         assert_eq!(geco.get_animation_name(), "Untitled Animation");
         assert!(geco.animation_state.features.is_empty());
         assert_eq!(geco.get_total_frames(), 100); // Default total_frames
+        assert!(geco.active_feature_id.is_none());
+    }
+
+    #[test]
+    fn test_set_total_frames() {
+        let mut geco = create_test_geco();
+        geco.set_total_frames(150);
+        assert_eq!(geco.get_total_frames(), 150);
+        geco.set_total_frames(0); // Should not change if invalid
+        assert_eq!(geco.get_total_frames(), 150);
+        geco.set_total_frames(-10); // Should not change
+        assert_eq!(geco.get_total_frames(), 150);
     }
 
     #[test]
     fn test_create_feature() {
+        // This test checks successful creation
         let mut geco = create_test_geco();
-        let feature_id = geco
+        let feature_id_poly = geco
             .create_feature(
-                "Test Feature".to_string(),
+                "Test Polygon".to_string(),
                 1, // Represents FeatureType::Polygon
                 0,
                 100,
             )
             .unwrap();
 
-        assert_eq!(geco.animation_state.features.len(), 1);
-        let feature = geco.animation_state.features.first().unwrap();
-        assert_eq!(feature.feature_id, feature_id);
-        assert_eq!(feature.name, "Test Feature");
-        assert_eq!(feature.r#type, 1);
-        assert_eq!(feature.appearance_frame, 0);
-        assert_eq!(feature.disappearance_frame, 100);
-        assert_eq!(geco.active_feature_id, Some(feature_id));
-    }
-
-    #[test]
-    fn test_add_point_and_initial_keyframe() {
-        let mut geco = create_test_geco();
-        let feature_id = geco.create_feature("Poly".to_string(), 1, 0, 50).unwrap();
-        let point_id = geco
-            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 2.0, Some(3.0))
+        let feature_id_line = geco
+            .create_feature(
+                "Test Polyline".to_string(),
+                2, // Represents FeatureType::Polyline
+                10,
+                90,
+            )
             .unwrap();
 
-        let feature = geco.animation_state.features.first().unwrap();
+        assert_eq!(geco.animation_state.features.len(), 2);
+        let poly_feature = geco
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id_poly)
+            .unwrap();
+        assert_eq!(poly_feature.name, "Test Polygon");
+        assert_eq!(poly_feature.r#type, FeatureType::Polygon as i32);
+        assert_eq!(poly_feature.appearance_frame, 0);
+        assert_eq!(poly_feature.disappearance_frame, 100);
+        assert_eq!(geco.active_feature_id, Some(feature_id_line.clone())); // Last created is active
+
+        let line_feature = geco
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id_line)
+            .unwrap();
+        assert_eq!(line_feature.name, "Test Polyline");
+        assert_eq!(line_feature.r#type, FeatureType::Polyline as i32);
+    }
+
+    // test_create_feature_invalid_type MOVED TO wasm_tests.rs
+
+    #[test]
+    fn test_add_point_to_active_feature_and_keyframe() {
+        // This test checks successful additions
+        let mut geco = create_test_geco();
+        let feature_id = geco.create_feature("Poly".to_string(), 1, 0, 50).unwrap(); // Active feature
+        let point_id = geco
+            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
+            .unwrap();
+
+        let feature = geco
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id)
+            .unwrap();
         assert_eq!(feature.point_animation_paths.len(), 1);
         let path = feature.point_animation_paths.first().unwrap();
         assert_eq!(path.point_id, point_id);
         assert_eq!(path.keyframes.len(), 1);
         let keyframe = path.keyframes.first().unwrap();
         assert_eq!(keyframe.frame, 0);
-        assert_eq!(
-            keyframe.position,
-            Some(Point {
-                x: 1.0,
-                y: 2.0,
-                z: Some(3.0)
-            })
-        );
+        let pos = keyframe.position.as_ref().unwrap();
+        assert!((pos.x - 1.0).abs() < 1e-6);
+        assert!((pos.y - 0.0).abs() < 1e-6);
+        assert!((pos.z.unwrap() - 0.0).abs() < 1e-6);
 
-        // Check initial structure snapshot
         assert_eq!(feature.structure_snapshots.len(), 1);
         let snapshot = feature.structure_snapshots.first().unwrap();
-        assert_eq!(snapshot.frame, 0); // Assuming appearance_frame was 0
-        assert_eq!(snapshot.ordered_point_ids, vec![point_id]);
+        assert_eq!(snapshot.frame, 0);
+        assert_eq!(snapshot.ordered_point_ids, vec![point_id.clone()]);
+
+        let point_id2 = geco
+            .add_point_to_active_feature("p2".to_string(), 5, 0.0, 1.0, Some(0.0))
+            .unwrap();
+        let feature_updated = geco
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id)
+            .unwrap();
+        assert_eq!(feature_updated.point_animation_paths.len(), 2);
+        let snapshot_updated = feature_updated.structure_snapshots.first().unwrap();
+        assert_eq!(
+            snapshot_updated.ordered_point_ids,
+            vec![point_id, point_id2]
+        );
     }
 
+    // test_add_point_no_active_feature MOVED TO wasm_tests.rs
+    // test_add_point_duplicate_id_in_feature MOVED TO wasm_tests.rs
+
     #[test]
-    fn test_add_multiple_keyframes_to_point() {
+    fn test_add_position_keyframe_to_point() {
+        // This test checks successful keyframe addition
         let mut geco = create_test_geco();
         let feature_id = geco.create_feature("Line".to_string(), 2, 0, 10).unwrap();
         let point_id = geco
-            .add_point_to_active_feature("p1".to_string(), 0, 0.0, 0.0, Some(0.0))
+            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
             .unwrap();
 
         geco.add_position_keyframe_to_point(
             feature_id.clone(),
             point_id.clone(),
             5,
-            5.0,
-            5.0,
+            0.0,
+            1.0,
             Some(0.0),
         )
         .unwrap();
@@ -95,136 +156,238 @@ mod feature_animation_tests {
             feature_id.clone(),
             point_id.clone(),
             2,
-            2.0,
-            2.0,
-            Some(0.0),
+            0.0,
+            0.0,
+            Some(1.0),
         )
-        .unwrap(); // Add out of order
+        .unwrap();
 
         let feature = geco.animation_state.features.first().unwrap();
         let path = feature.point_animation_paths.first().unwrap();
         assert_eq!(path.keyframes.len(), 3);
-        assert_eq!(path.keyframes[0].frame, 0); // Check sorting
+        assert_eq!(path.keyframes[0].frame, 0);
+        let pos_kf0 = path.keyframes[0].position.as_ref().unwrap();
+        assert!(
+            (pos_kf0.x - 1.0).abs() < 1e-6
+                && (pos_kf0.y).abs() < 1e-6
+                && (pos_kf0.z.unwrap()).abs() < 1e-6
+        );
         assert_eq!(path.keyframes[1].frame, 2);
+        let pos_kf1 = path.keyframes[1].position.as_ref().unwrap();
+        assert!(
+            (pos_kf1.x).abs() < 1e-6
+                && (pos_kf1.y).abs() < 1e-6
+                && (pos_kf1.z.unwrap() - 1.0).abs() < 1e-6
+        );
         assert_eq!(path.keyframes[2].frame, 5);
+        let pos_kf2 = path.keyframes[2].position.as_ref().unwrap();
+        assert!(
+            (pos_kf2.x).abs() < 1e-6
+                && (pos_kf2.y - 1.0).abs() < 1e-6
+                && (pos_kf2.z.unwrap()).abs() < 1e-6
+        );
     }
 
     #[test]
-    fn test_interpolate_point_position_logic() {
+    fn test_interpolate_point_position_slerp_logic() {
+        let kf1_pos = Point {
+            x: 1.0,
+            y: 0.0,
+            z: Some(0.0),
+        };
+        let kf2_pos = Point {
+            x: 0.0,
+            y: 1.0,
+            z: Some(0.0),
+        };
         let path = PointAnimationPath {
-            point_id: "test_p".to_string(),
+            point_id: "slerp_test_p".to_string(),
             keyframes: vec![
                 PositionKeyframe {
                     frame: 0,
-                    position: Some(Point {
-                        x: 0.0,
-                        y: 0.0,
-                        z: Some(0.0),
-                    }),
+                    position: Some(kf1_pos.clone()),
                 },
                 PositionKeyframe {
                     frame: 10,
-                    position: Some(Point {
-                        x: 10.0,
-                        y: 20.0,
-                        z: Some(10.0),
-                    }),
+                    position: Some(kf2_pos.clone()),
                 },
             ],
         };
-
-        // Before first keyframe
-        let pos_before = interpolate_point_position(&path, -5).unwrap();
-        assert_eq!(pos_before.x, 0.0);
-
-        // At first keyframe
-        let pos_kf1 = interpolate_point_position(&path, 0).unwrap();
-        assert_eq!(pos_kf1.x, 0.0);
-
-        // Between keyframes
         let pos_mid = interpolate_point_position(&path, 5).unwrap();
-        assert_eq!(pos_mid.x, 5.0);
-        assert_eq!(pos_mid.y, 10.0);
-        assert_eq!(pos_mid.z, Some(5.0));
-
-        // At second keyframe
-        let pos_kf2 = interpolate_point_position(&path, 10).unwrap();
-        assert_eq!(pos_kf2.x, 10.0);
-
-        // After last keyframe
+        assert!((pos_mid.x - 0.7071).abs() < 1e-4);
+        assert!((pos_mid.y - 0.7071).abs() < 1e-4);
+        assert!(pos_mid.z.unwrap().abs() < 1e-4);
+        let mag_mid = (pos_mid.x.powi(2) + pos_mid.y.powi(2) + pos_mid.z.unwrap().powi(2)).sqrt();
+        assert!((mag_mid - 1.0).abs() < 1e-5);
+        let pos_start = interpolate_point_position(&path, 0).unwrap();
+        assert!((pos_start.x - 1.0).abs() < 1e-6);
+        let pos_end = interpolate_point_position(&path, 10).unwrap();
+        assert!((pos_end.y - 1.0).abs() < 1e-6);
+        let pos_before = interpolate_point_position(&path, -5).unwrap();
+        assert!((pos_before.x - 1.0).abs() < 1e-6);
         let pos_after = interpolate_point_position(&path, 15).unwrap();
-        assert_eq!(pos_after.x, 10.0);
+        assert!((pos_after.y - 1.0).abs() < 1e-6);
+        let path_identical = PointAnimationPath {
+            point_id: "identical_kf".to_string(),
+            keyframes: vec![
+                PositionKeyframe {
+                    frame: 0,
+                    position: Some(kf1_pos.clone()),
+                },
+                PositionKeyframe {
+                    frame: 10,
+                    position: Some(kf1_pos.clone()),
+                },
+            ],
+        };
+        let pos_identical_mid = interpolate_point_position(&path_identical, 5).unwrap();
+        assert!((pos_identical_mid.x - 1.0).abs() < 1e-6);
     }
 
     #[test]
-    fn test_get_renderable_features_json_at_frame_basic() {
+    fn test_interpolate_point_position_single_keyframe() {
+        let path = PointAnimationPath {
+            point_id: "single_kf_p".to_string(),
+            keyframes: vec![PositionKeyframe {
+                frame: 5,
+                position: Some(Point {
+                    x: 1.0,
+                    y: 2.0,
+                    z: Some(3.0),
+                }),
+            }],
+        };
+        let pos = interpolate_point_position(&path, 5).unwrap();
+        assert_eq!(pos.x, 1.0);
+        let pos_before = interpolate_point_position(&path, 0).unwrap();
+        assert_eq!(pos_before.x, 1.0);
+        let pos_after = interpolate_point_position(&path, 10).unwrap();
+        assert_eq!(pos_after.x, 1.0);
+    }
+
+    #[test]
+    fn test_interpolate_point_position_no_keyframes() {
+        let path = PointAnimationPath {
+            point_id: "no_kf_p".to_string(),
+            keyframes: vec![],
+        };
+        assert!(interpolate_point_position(&path, 5).is_none());
+    }
+
+    #[test]
+    fn test_get_renderable_features_json_at_frame_detailed() {
         let mut geco = create_test_geco();
-        let fid = geco
-            .create_feature("TestPoly".to_string(), 1, 0, 100)
+        geco.set_total_frames(20);
+        let fid1 = geco.create_feature("Poly1".to_string(), 1, 0, 10).unwrap();
+        let p1_fid1 = geco
+            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
             .unwrap();
-        let p1_id = geco
-            .add_point_to_active_feature("p1".to_string(), 0, 0.0, 0.0, Some(0.0))
+        let p2_fid1 = geco
+            .add_point_to_active_feature("p2".to_string(), 0, 0.0, 1.0, Some(0.0))
             .unwrap();
-        let _p2_id = geco
-            .add_point_to_active_feature("p2".to_string(), 0, 10.0, 0.0, Some(0.0))
+        geco.add_position_keyframe_to_point(
+            fid1.clone(),
+            p1_fid1.clone(),
+            10,
+            -1.0,
+            0.0,
+            Some(0.0),
+        )
+        .unwrap();
+        geco.add_position_keyframe_to_point(fid1.clone(), p2_fid1.clone(), 5, 0.0, -1.0, Some(0.0))
             .unwrap();
+        let fid2 = geco.create_feature("Line1".to_string(), 2, 5, 15).unwrap();
+        let p1_fid2 = geco
+            .add_point_to_active_feature("p1".to_string(), 5, 0.0, 0.0, Some(1.0))
+            .unwrap();
+        geco.add_position_keyframe_to_point(
+            fid2.clone(),
+            p1_fid2.clone(),
+            15,
+            0.0,
+            0.0,
+            Some(-1.0),
+        )
+        .unwrap();
 
-        geco.add_position_keyframe_to_point(fid.clone(), p1_id.clone(), 10, 10.0, 10.0, Some(0.0))
-            .unwrap();
-
-        // Frame 0
         let json_frame0 = geco.get_renderable_features_json_at_frame(0);
-        // TODO: Add actual JSON parsing and assertion here. For now, just check it's not empty.
-        // Example: let parsed: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame0).unwrap();
-        // assert_eq!(parsed.len(), 1); etc.
-        assert!(json_frame0.contains("\"name\":\"TestPoly")); // Basic check
-        assert!(json_frame0.contains("\"feature_id\":"));
-        assert!(json_frame0.contains("\"x\":0.0")); // p1 at frame 0
+        let data_frame0: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame0).unwrap();
+        assert_eq!(data_frame0.len(), 1);
+        assert_eq!(data_frame0[0].name, "Poly1");
+        assert_eq!(data_frame0[0].points.len(), 2);
+        assert!((data_frame0[0].points[0].x - 1.0).abs() < 1e-5);
+        assert!((data_frame0[0].points[1].y - 1.0).abs() < 1e-5);
 
-        // Frame 5 (p1 should be halfway)
         let json_frame5 = geco.get_renderable_features_json_at_frame(5);
-        assert!(json_frame5.contains("\"x\":5.0")); // p1.x interpolated
-        assert!(json_frame5.contains("\"y\":5.0")); // p1.y interpolated
+        let data_frame5: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame5).unwrap();
+        assert_eq!(data_frame5.len(), 2);
+        let poly1_f5 = data_frame5.iter().find(|f| f.name == "Poly1").unwrap();
+        let line1_f5 = data_frame5.iter().find(|f| f.name == "Line1").unwrap();
+        assert_eq!(poly1_f5.points.len(), 2);
+        assert!((poly1_f5.points[0].x - 0.0).abs() < 1e-5);
+        assert!((poly1_f5.points[1].y - -1.0).abs() < 1e-5);
+        assert_eq!(line1_f5.points.len(), 1);
+        assert!((line1_f5.points[0].z.unwrap() - 1.0).abs() < 1e-5);
 
-        // Frame 10 (p1 at its second keyframe)
-        let json_frame10 = geco.get_renderable_features_json_at_frame(10);
-        assert!(json_frame10.contains("\"x\":10.0"));
-        assert!(json_frame10.contains("\"y\":10.0"));
+        let json_frame12 = geco.get_renderable_features_json_at_frame(12);
+        let data_frame12: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame12).unwrap();
+        assert_eq!(data_frame12.len(), 1);
+        assert_eq!(data_frame12[0].name, "Line1");
+        assert!((data_frame12[0].points[0].z.unwrap() - -0.5877).abs() < 1e-4);
 
-        // Frame 101 (feature should be inactive)
-        let json_frame101 = geco.get_renderable_features_json_at_frame(101);
-        assert_eq!(json_frame101, "[]");
+        let json_frame20 = geco.get_renderable_features_json_at_frame(20);
+        assert_eq!(json_frame20, "[]");
     }
 
     #[test]
-    fn test_protobuf_serialization_with_features() {
+    fn test_protobuf_serialization_deserialization_full_feature_cycle() {
         let mut geco1 = create_test_geco();
-        geco1.set_animation_name("Feature Test Animation".to_string());
-        geco1.set_total_frames(20);
+        geco1.set_animation_name("Full Cycle Test".to_string());
+        geco1.set_total_frames(50);
         let fid = geco1
-            .create_feature("MyFeature".to_string(), 2, 5, 15)
+            .create_feature("AnimatedFeature".to_string(), 1, 10, 40)
             .unwrap();
         let p1id = geco1
-            .add_point_to_active_feature("p1".to_string(), 5, 1.0, 1.0, None)
+            .add_point_to_active_feature("pt_a".to_string(), 10, 1.0, 0.0, Some(0.0))
+            .unwrap();
+        let p2id = geco1
+            .add_point_to_active_feature("pt_b".to_string(), 15, 0.0, 1.0, Some(0.0))
             .unwrap();
         geco1
-            .add_position_keyframe_to_point(fid.clone(), p1id.clone(), 10, 5.0, 5.0, None)
+            .add_position_keyframe_to_point(fid.clone(), p1id.clone(), 20, 0.0, 0.0, Some(1.0))
+            .unwrap();
+        geco1
+            .add_position_keyframe_to_point(fid.clone(), p1id.clone(), 30, -1.0, 0.0, Some(0.0))
+            .unwrap();
+        geco1
+            .add_position_keyframe_to_point(fid.clone(), p2id.clone(), 25, 0.0, -1.0, Some(0.0))
             .unwrap();
 
         let bytes = geco1.get_animation_protobuf();
         assert!(!bytes.is_empty());
-
         let mut geco2 = Geco::new();
         geco2.load_animation_protobuf(&bytes).unwrap();
-
-        assert_eq!(geco2.get_animation_name(), "Feature Test Animation");
-        assert_eq!(geco2.get_total_frames(), 20);
+        assert_eq!(geco2.get_animation_name(), "Full Cycle Test");
+        assert_eq!(geco2.get_total_frames(), 50);
         assert_eq!(geco2.animation_state.features.len(), 1);
         let feature = geco2.animation_state.features.first().unwrap();
-        assert_eq!(feature.name, "MyFeature");
-        assert_eq!(feature.point_animation_paths.len(), 1);
-        // Further checks on deserialized data...
-        let json_frame7 = geco2.get_renderable_features_json_at_frame(7); // Mid-animation for p1
-        assert!(json_frame7.contains("\"name\":\"MyFeature"));
+        assert_eq!(feature.name, "AnimatedFeature");
+        assert_eq!(feature.appearance_frame, 10);
+        assert_eq!(feature.disappearance_frame, 40);
+        assert_eq!(feature.point_animation_paths.len(), 2);
+
+        let json_frame15 = geco2.get_renderable_features_json_at_frame(15);
+        let data_f15: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame15).unwrap();
+        assert_eq!(data_f15.len(), 1);
+        assert_eq!(data_f15[0].points.len(), 2);
+        assert!((data_f15[0].points[0].x - 0.7071).abs() < 1e-4);
+        assert!((data_f15[0].points[1].y - 1.0).abs() < 1e-4);
+
+        let json_frame35 = geco2.get_renderable_features_json_at_frame(35);
+        let data_f35: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame35).unwrap();
+        assert_eq!(data_f35.len(), 1);
+        assert_eq!(data_f35[0].points.len(), 2);
+        assert!((data_f35[0].points[0].x - -1.0).abs() < 1e-4);
+        assert!((data_f35[0].points[1].y - -1.0).abs() < 1e-4);
     }
 }

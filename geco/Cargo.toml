@@ -27,6 +27,8 @@ prost-build = "0.12"
 wasm-bindgen-test = "0.3"  # For testing WASM code
 js-sys = "0.3"             # JavaScript interop utilities for testing
 assert_matches = "1.5"     # For more readable assertions
+backend = { path = "../backend", version = "0.1.0" }
+chrono = { version = "0.4", features = ["serde"] }
 
 [package.metadata.wasm-pack.profile.dev]
 # For `wasm-pack build` or `wasm-pack build --dev`

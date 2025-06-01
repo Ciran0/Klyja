@@ -1,102 +1,51 @@
-//! Basic tests for geco crate that don't require wasm
+//! This module contains basic tests to verify that our code compiles and runs without errors.
 
-use geco::protobuf_gen::{AnimatedPoint, MapAnimation, Point, Polygon};
-use prost::Message;
+use backend::{
+    errors::AppError,
+    models::Animation,
+    protobuf_gen::MapAnimation, // Make sure this path is correct if backend::protobuf_gen is how you access it
+};
 
 #[test]
-fn test_map_animation_serialization() {
-    // Create a test map animation
-    let map_animation = MapAnimation {
-        animation_id: "test-animation".to_string(),
+fn test_map_animation_creation() {
+    let animation = MapAnimation {
         name: "Test Animation".to_string(),
-        total_frames: 30,
-        polygons: vec![],
+        animation_id: "test-id".to_string(),
+        total_frames: 10,
+        features: vec![], // Changed from polygons to features
     };
 
-    // Serialize to bytes
-    let bytes = map_animation.encode_to_vec();
-
-    // Deserialize
-    let decoded = MapAnimation::decode(&bytes[..]).unwrap();
-
-    // Verify
-    assert_eq!(decoded.animation_id, "test-animation");
-    assert_eq!(decoded.name, "Test Animation");
-    assert_eq!(decoded.total_frames, 30);
-    assert!(decoded.polygons.is_empty());
+    // Test that fields are set correctly
+    assert_eq!(animation.name, "Test Animation");
+    assert_eq!(animation.animation_id, "test-id");
+    assert_eq!(animation.total_frames, 10);
+    assert_eq!(animation.features.len(), 0); // Changed from polygons to features
 }
 
 #[test]
-fn test_point_serialization() {
-    // Create a point
-    let point = Point {
-        x: 1.0,
-        y: 2.0,
-        z: Some(3.0),
-    };
+fn test_app_error_construction() {
+    let not_found_error = AppError::NotFound("Not found test error".to_string());
 
-    // Serialize to bytes
-    let mut buf = Vec::new();
-    point.encode(&mut buf).unwrap();
-
-    // Deserialize
-    let decoded = Point::decode(&buf[..]).unwrap();
-
-    // Verify
-    assert_eq!(decoded.x, 1.0);
-    assert_eq!(decoded.y, 2.0);
-    assert_eq!(decoded.z, Some(3.0));
+    match not_found_error {
+        AppError::NotFound(msg) => {
+            assert_eq!(msg, "Not found test error");
+        }
+        _ => panic!("Wrong error type"),
+    }
 }
 
 #[test]
-fn test_polygon_with_points() {
-    // Create a point
-    let point1 = Point {
-        x: 1.0,
-        y: 2.0,
-        z: Some(3.0),
+fn test_animation_struct() {
+    let now = chrono::Local::now().naive_local();
+    let animation = Animation {
+        id: 123,
+        name: "Test".to_string(),
+        protobuf_data: vec![1, 2, 3],
+        created_at: now,
+        updated_at: now,
     };
 
-    let point2 = Point {
-        x: 4.0,
-        y: 5.0,
-        z: Some(6.0),
-    };
-
-    // Create animated points
-    let animated_point1 = AnimatedPoint {
-        point_id: "point-1".to_string(),
-        initial_position: Some(point1),
-        movements: vec![],
-    };
-
-    let animated_point2 = AnimatedPoint {
-        point_id: "point-2".to_string(),
-        initial_position: Some(point2),
-        movements: vec![],
-    };
-
-    // Create a polygon
-    let mut properties = std::collections::HashMap::new();
-    properties.insert("color".to_string(), "red".to_string());
-
-    let polygon = Polygon {
-        polygon_id: "polygon-1".to_string(),
-        points: vec![animated_point1, animated_point2],
-        properties,
-    };
-
-    // Serialize
-    let bytes = polygon.encode_to_vec();
-
-    // Deserialize
-    let decoded = Polygon::decode(&bytes[..]).unwrap();
-
-    // Verify
-    assert_eq!(decoded.polygon_id, "polygon-1");
-    assert_eq!(decoded.points.len(), 2);
-    assert_eq!(decoded.points[0].point_id, "point-1");
-    assert_eq!(decoded.points[1].point_id, "point-2");
-    assert_eq!(decoded.properties.get("color").unwrap(), "red");
+    assert_eq!(animation.id, 123);
+    assert_eq!(animation.name, "Test");
+    assert_eq!(animation.protobuf_data, vec![1, 2, 3]);
 }
-

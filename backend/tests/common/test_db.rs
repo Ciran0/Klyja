@@ -100,34 +100,51 @@ impl Drop for TestDb {
 /// Creates test data for integration tests
 pub mod fixtures {
     use backend::models::{Animation, NewAnimation};
-    use backend::protobuf_gen::{AnimatedPoint, MapAnimation, Point, Polygon};
+    // Corrected imports based on the new structure (Feature, FeatureType, Point, etc.)
+    use backend::protobuf_gen::{
+        Feature, FeatureStructureSnapshot, FeatureType, MapAnimation, Point, PointAnimationPath,
+        PositionKeyframe,
+    };
     use diesel::prelude::*;
     use prost::Message;
+    use std::collections::HashMap; // For feature properties
 
     pub fn create_test_animation_proto(name: &str) -> Vec<u8> {
-        let point = Point {
+        let initial_point_pos = Point {
             x: 1.0,
             y: 2.0,
             z: Some(3.0),
         };
 
-        let animated_point = AnimatedPoint {
-            point_id: "test-point".to_string(),
-            initial_position: Some(point),
-            movements: vec![],
+        let point_animation_path = PointAnimationPath {
+            point_id: "test-point-id".to_string(),
+            keyframes: vec![PositionKeyframe {
+                frame: 0,
+                position: Some(initial_point_pos),
+            }],
         };
 
-        let polygon = Polygon {
-            polygon_id: "test-polygon".to_string(),
-            points: vec![animated_point],
-            properties: Default::default(),
+        let feature_structure_snapshot = FeatureStructureSnapshot {
+            frame: 0,
+            ordered_point_ids: vec!["test-point-id".to_string()],
+        };
+
+        let test_feature = Feature {
+            feature_id: "test-feature-id".to_string(),
+            name: "Test Feature".to_string(),
+            r#type: FeatureType::Polygon as i32, // Example: Polygon type
+            appearance_frame: 0,
+            disappearance_frame: 30,
+            point_animation_paths: vec![point_animation_path],
+            structure_snapshots: vec![feature_structure_snapshot],
+            properties: HashMap::new(),
         };
 
         let animation = MapAnimation {
             animation_id: format!("test-{}", uuid::Uuid::new_v4()),
             name: name.to_string(),
             total_frames: 30,
-            polygons: vec![polygon],
+            features: vec![test_feature], // Changed from polygons
         };
 
         animation.encode_to_vec()

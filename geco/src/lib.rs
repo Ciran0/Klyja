@@ -13,7 +13,7 @@ use crate::protobuf_gen::{
     PositionKeyframe,
 };
 use nalgebra::Vector3;
-use serde::Serialize; // For JSON serialization
+use serde::{Deserialize, Serialize}; // Added Deserialize
 use uuid::Uuid;
 use wasm_bindgen::prelude::*; // For generating IDs
 
@@ -45,7 +45,7 @@ macro_rules! console_log {
 }
 
 // Define simplified structs for JSON serialization (similar to your old ones)
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)] // Added Deserialize
 struct SimplePointJson {
     x: f32,
     y: f32,
@@ -63,7 +63,7 @@ impl From<&Point> for SimplePointJson {
 }
 
 // Represents a feature with its current points for rendering
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)] // Added Deserialize
 struct RenderableFeatureJson {
     feature_id: String,
     name: String,
