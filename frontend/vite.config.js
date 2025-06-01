@@ -4,7 +4,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       external: [
-        'geco/pkg/geco.js'
+        // If you are treating the actual geco.js as external for build, keep this.
+        // For tests, the alias below should handle it.
+        // 'geco/pkg/geco.js' 
       ]
     }
   },
@@ -21,7 +23,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      'geco/pkg/geco.js': '/tests/mocks/geco-mock.js'
+      // Ensure the alias key exactly matches the import path used in tests and source
+      '/pkg/geco.js': '/tests/mocks/geco-mock.js'
     }
   }
 });

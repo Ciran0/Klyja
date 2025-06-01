@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ThreeViewer } from '../js/three-viewer.js';
-import * as THREE from 'three'; // Mocked in setup.js
+import * as THREE_MODULE from 'three'; // Import the entire module
+import { OrbitControls as OrbitControlsConstructorMock } from 'three/addons/controls/OrbitControls.js';
 
-// Get the mocked THREE classes for specific assertions
-const MockScene = THREE.Scene;
-const MockLine = THREE.Line;
-const MockLineLoop = THREE.LineLoop;
-const MockBufferGeometry = THREE.BufferGeometry;
+// Get the mocked THREE classes from the imported module
+const MockScene = THREE_MODULE.Scene;
+const MockPerspectiveCamera = THREE_MODULE.PerspectiveCamera;
+const MockWebGLRenderer = THREE_MODULE.WebGLRenderer;
+const MockMesh = THREE_MODULE.Mesh;
+const MockLine = THREE_MODULE.Line;
+const MockLineLoop = THREE_MODULE.LineLoop;
+const MockBufferGeometry = THREE_MODULE.BufferGeometry; 
+const MockVector3 = THREE_MODULE.Vector3; 
 
 
 describe('ThreeViewer', () => {
@@ -14,15 +19,15 @@ describe('ThreeViewer', () => {
   let container;
 
   beforeEach(() => {
+    vi.clearAllMocks(); 
     container = document.createElement('div');
     container.id = 'viewer-test-container';
-    // Mock clientWidth and clientHeight for camera aspect ratio
     Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true });
     Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
     document.body.appendChild(container);
 
-    viewer = new ThreeViewer('viewer-test-container', { sphereRadius: 1 }); // Use explicit radius for tests
-    viewer.init(); // Initialize the viewer
+    viewer = new ThreeViewer('viewer-test-container', { sphereRadius: 1 });
+    viewer.init();
   });
 
   afterEach(() => {
@@ -30,7 +35,6 @@ describe('ThreeViewer', () => {
       viewer.dispose();
     }
     container.remove();
-    vi.clearAllMocks();
   });
 
   describe('initialization', () => {
@@ -39,41 +43,48 @@ describe('ThreeViewer', () => {
     });
 
     it('should create a scene, camera, renderer, and main sphere', () => {
-      expect(viewer.scene).toBeInstanceOf(THREE.Scene);
-      expect(viewer.camera).toBeInstanceOf(THREE.PerspectiveCamera);
-      expect(viewer.renderer).toBeInstanceOf(THREE.WebGLRenderer);
-      expect(viewer.mainSphereMesh).toBeInstanceOf(THREE.Mesh);
-      expect(viewer.mainSphereMesh.geometry.parameters.radius).toBe(1);
+      expect(viewer.scene).toBeInstanceOf(MockScene);
+      expect(viewer.camera).toBeInstanceOf(MockPerspectiveCamera);
+      expect(viewer.renderer).toBeInstanceOf(MockWebGLRenderer); 
+      expect(viewer.mainSphereMesh).toBeInstanceOf(MockMesh);
+      // Ensure geometry is defined on the mock mesh instance before accessing parameters
+      if (viewer.mainSphereMesh.geometry) {
+        expect(viewer.mainSphereMesh.geometry.parameters.radius).toBe(1);
+      } else {
+        throw new Error("MockMesh instance does not have geometry defined as expected.");
+      }
     });
 
-    it('should set up OrbitControls', () => {
-      expect(viewer.controls).toBeDefined();
+    it('should set up OrbitControls', () => { // Removed async as import is at top
+      expect(viewer.controls).toBeInstanceOf(OrbitControlsConstructorMock); 
     });
   });
 
   describe('renderFeatures', () => {
     it('should clear previous visual objects before rendering new ones', () => {
-      const initialObject = new THREE.Object3D();
-      viewer.scene.add(initialObject);
+      const initialObject = { type: 'TestObject' };
+      // Ensure scene mock instance is used if add is an instance method
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      sceneInstance.add(initialObject);
       viewer.visualObjects.push(initialObject);
-      const sceneRemoveSpy = vi.spyOn(viewer.scene, 'remove');
-
-      viewer.renderFeatures([]); // Render empty features to trigger clear
-
+      const sceneRemoveSpy = vi.spyOn(sceneInstance, 'remove');
+      viewer.renderFeatures([]);
       expect(sceneRemoveSpy).toHaveBeenCalledWith(initialObject);
       expect(viewer.visualObjects).toHaveLength(0);
     });
 
     it('should render Polyline features correctly', () => {
+      MockBufferGeometry.mockClear(); 
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
+
+
       const featuresData = [
         {
           feature_id: 'line1',
           name: 'Test Line',
           feature_type: 'Polyline',
-          points: [
-            { x: 0, y: 0, z: 1 },
-            { x: 1, y: 0, z: 1 },
-          ],
+          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 } ],
           properties: {},
         },
       ];
@@ -81,22 +92,26 @@ describe('ThreeViewer', () => {
 
       expect(viewer.visualObjects).toHaveLength(1);
       const renderedObject = viewer.visualObjects[0];
-      expect(renderedObject).toBeInstanceOf(THREE.Line); // Check type
-      expect(MockBufferGeometry().setFromPoints).toHaveBeenCalled();
-      expect(viewer.scene.add).toHaveBeenCalledWith(renderedObject);
+      expect(renderedObject).toBeInstanceOf(MockLine);
+      
+      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
+      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0]; 
+      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
+      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
     });
 
     it('should render Polygon features as LineLoop correctly', () => {
+      MockBufferGeometry.mockClear();
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
+
+
       const featuresData = [
         {
           feature_id: 'poly1',
           name: 'Test Polygon',
           feature_type: 'Polygon',
-          points: [
-            { x: 0, y: 0, z: 1 },
-            { x: 1, y: 0, z: 1 },
-            { x: 0, y: 1, z: 1 },
-          ],
+          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 }, { x: 0, y: 1, z: 1 } ],
           properties: {},
         },
       ];
@@ -104,27 +119,24 @@ describe('ThreeViewer', () => {
 
       expect(viewer.visualObjects).toHaveLength(1);
       const renderedObject = viewer.visualObjects[0];
-      expect(renderedObject).toBeInstanceOf(THREE.LineLoop);
-      expect(MockBufferGeometry().setFromPoints).toHaveBeenCalled();
-      expect(viewer.scene.add).toHaveBeenCalledWith(renderedObject);
+      expect(renderedObject).toBeInstanceOf(MockLineLoop);
+      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
+      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0];
+      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
+      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
     });
 
     it('should not render Polyline with less than 2 points', () => {
-      const featuresData = [
-        { feature_type: 'Polyline', points: [{ x: 0, y: 0, z: 1 }] },
-      ];
+      const featuresData = [ { feature_type: 'Polyline', points: [{ x: 0, y: 0, z: 1 }] } ];
       viewer.renderFeatures(featuresData);
       expect(viewer.visualObjects).toHaveLength(0);
     });
     
     it('should not render Polygon with less than 2 points (for LineLoop)', () => {
-      const featuresData = [
-        { feature_type: 'Polygon', points: [{ x: 0, y: 0, z: 1 }] },
-      ];
+      const featuresData = [ { feature_type: 'Polygon', points: [{ x: 0, y: 0, z: 1 }] } ];
       viewer.renderFeatures(featuresData);
       expect(viewer.visualObjects).toHaveLength(0);
     });
-
 
     it('should handle features with no points', () => {
       const featuresData = [{ feature_type: 'Polyline', points: [] }];
@@ -133,25 +145,19 @@ describe('ThreeViewer', () => {
     });
 
     it('should handle features with undefined points array', () => {
-      const featuresData = [{ feature_type: 'Polyline' /* points undefined */ }];
+      const featuresData = [{ feature_type: 'Polyline' }];
       viewer.renderFeatures(featuresData);
       expect(viewer.visualObjects).toHaveLength(0);
     });
     
     it('should use default z=0 if point.z is undefined', () => {
-       const featuresData = [
-        {
-          feature_type: 'Polyline',
-          points: [ { x: 0, y: 0 }, { x: 1, y: 1 } ], // z is undefined
-        },
-      ];
-      // Spy on Vector3 constructor to see what it's called with
-      const vector3Spy = vi.spyOn(THREE, 'Vector3');
-      viewer.renderFeatures(featuresData);
+       MockVector3.mockClear(); 
+       const featuresData = [ { feature_type: 'Polyline', points: [ { x: 0, y: 0 }, { x: 1, y: 1 } ] } ];
+       viewer.renderFeatures(featuresData);
       
-      expect(vector3Spy).toHaveBeenCalledWith(0,0,0);
-      expect(vector3Spy).toHaveBeenCalledWith(1,1,0);
-      expect(viewer.visualObjects).toHaveLength(1);
+       expect(MockVector3).toHaveBeenCalledWith(0,0,0);
+       expect(MockVector3).toHaveBeenCalledWith(1,1,0);
+       expect(viewer.visualObjects).toHaveLength(1);
     });
   });
 
@@ -160,46 +166,20 @@ describe('ThreeViewer', () => {
       const mockOnSphereClick = vi.fn();
       viewer.onSphereClick = mockOnSphereClick;
 
-      // Mock the raycaster to return an intersection
-      const mockIntersectionPoint = new THREE.Vector3(2, 0, 0); // Non-normalized
       viewer.renderer.domElement.getBoundingClientRect = vi.fn(() => ({
         left: 0, top: 0, width: 800, height: 600,
       }));
-      viewer.camera.getWorldDirection = vi.fn(() => new THREE.Vector3(0,0,-1)); // Mock camera direction
-
-      // Simulate raycaster intersection
-      const mockRaycaster = viewer.scene.children.find(c => c.constructor.name === 'Raycaster') || new THREE.Raycaster();
-      mockRaycaster.intersectObject = vi.fn(() => [{ point: mockIntersectionPoint }]);
-      // This is a simplified way to trigger; real raycasting is complex to mock perfectly.
-      // We directly call the internal logic if direct event simulation is too hard.
       
-      // To test the callback, we can manually invoke part of the raycasting logic
-      // if directly simulating the event is too complex due to mocks.
-      // For this test, let's assume the event listener and raycasting are set up.
-      // We can't easily "fire" the event to trigger the internal raycaster logic
-      // without a more complex setup or exposing the handler.
-
-      // A more practical way to test this part unit-style:
-      // Assume raycaster.intersectObject returns the desired point.
-      // Then, check if onSphereClick is called with the normalized version.
-      
-      // Manually trigger the part of the event handler that calls the callback
-      // This is a common pattern when testing complex event-driven interactions.
-      if (viewer.mainSphereMesh && viewer.onSphereClick) {
-         const intersectedPoint = new THREE.Vector3(2, 3, 6); // 2*2+3*3+6*6 = 4+9+36 = 49, sqrt(49)=7
-         const normalizedPoint = intersectedPoint.clone().normalize(); // (2/7, 3/7, 6/7)
+      const intersectedPoint = new MockVector3(2, 3, 6); 
+      const normalizedPoint = intersectedPoint.clone().normalize(); 
+                                                               
+      viewer.onSphereClick(normalizedPoint.x, normalizedPoint.y, normalizedPoint.z);
          
-         // Simulate the internal call that would happen after a successful intersection
-         viewer.onSphereClick(normalizedPoint.x, normalizedPoint.y, normalizedPoint.z);
-         
-         expect(mockOnSphereClick).toHaveBeenCalledWith(
-           expect.closeTo(2/7), 
-           expect.closeTo(3/7), 
-           expect.closeTo(6/7)
-         );
-      } else {
-          throw new Error("Viewer or onSphereClick not set up for test");
-      }
+      expect(mockOnSphereClick).toHaveBeenCalledWith(
+        expect.closeTo(2/7), 
+        expect.closeTo(3/7), 
+        expect.closeTo(6/7)
+      );
     });
   });
 
