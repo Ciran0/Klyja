@@ -1,7 +1,6 @@
 // frontend/js/wasm-manager.js
-// Use dynamic import for better test compatibility
 const loadWasm = async () => {
-  return import('geco/pkg/geco.js');
+  return import('/pkg/geco.js');
 };
 
 export class WasmManager {
@@ -13,22 +12,26 @@ export class WasmManager {
 
   async init() {
     if (this.initialized) return;
-    
     try {
-      // Load WASM module dynamically
       this.wasmModule = await loadWasm();
       const { default: init, Geco } = this.wasmModule;
-      
       await init();
       this.gecoInstance = new Geco();
       this.initialized = true;
-      console.log('WASM module initialized. Animation Name:', this.gecoInstance.get_animation_name());
+      console.log('WASM module initialized (Feature Edition). Animation Name:', this.gecoInstance.get_animation_name());
     } catch (error) {
       console.error('Failed to initialize WASM:', error);
       throw error;
     }
   }
 
+  ensureInitialized() {
+    if (!this.initialized || !this.gecoInstance) {
+      throw new Error('WASM Manager not initialized');
+    }
+  }
+
+  // --- Animation Global Settings ---
   getAnimationName() {
     this.ensureInitialized();
     return this.gecoInstance.get_animation_name();
@@ -39,25 +42,55 @@ export class WasmManager {
     this.gecoInstance.set_animation_name(name);
   }
 
-  addStaticPolygon(polygonId, x, y) {
+  getTotalFrames() {
     this.ensureInitialized();
-    this.gecoInstance.add_static_polygon(polygonId, x, y);
+    return this.gecoInstance.get_total_frames();
   }
 
-  addPointToActivePolygon(x, y, z) {
+  setTotalFrames(totalFrames) {
     this.ensureInitialized();
-    this.gecoInstance.add_point_to_active_polygon(x, y, z);
+    this.gecoInstance.set_total_frames(totalFrames);
   }
 
-  getPolygonsData() {
+  // --- Feature and Point Management ---
+  createFeature(name, featureTypeVal, appearanceFrame, disappearanceFrame) {
     this.ensureInitialized();
-    const json = this.gecoInstance.get_polygons_json();
+    // featureTypeVal: 1 for Polygon, 2 for Polyline (as defined in your Geco::create_feature)
     try {
-      return JSON.parse(json);
+      return this.gecoInstance.create_feature(name, featureTypeVal, appearanceFrame, disappearanceFrame);
     } catch (e) {
-      console.error('Failed to parse polygons JSON:', e);
-      return [];
+      console.error("Error creating feature:", e);
+      throw e; // Re-throw or handle as appropriate
     }
+  }
+
+  addPointToActiveFeature(pointIdStr, initialFrame, x, y, z) {
+    this.ensureInitialized();
+    // z can be null or a number for optional float
+    const zValue = (z === undefined || z === null) ? null : z;
+    try {
+      return this.gecoInstance.add_point_to_active_feature(pointIdStr, initialFrame, x, y, zValue);
+    } catch (e) {
+      console.error("Error adding point to active feature:", e);
+      throw e;
+    }
+  }
+
+  addPositionKeyframeToPoint(featureId, pointId, frame, x, y, z) {
+    this.ensureInitialized();
+    const zValue = (z === undefined || z === null) ? null : z;
+    try {
+      this.gecoInstance.add_position_keyframe_to_point(featureId, pointId, frame, x, y, zValue);
+    } catch (e) {
+      console.error("Error adding position keyframe:", e);
+      throw e;
+    }
+  }
+
+  // --- Data Retrieval ---
+  getRenderableFeaturesJsonAtFrame(frameNumber) {
+    this.ensureInitialized();
+    return this.gecoInstance.get_renderable_features_json_at_frame(frameNumber);
   }
 
   getAnimationProtobuf() {
@@ -68,11 +101,5 @@ export class WasmManager {
   loadAnimationProtobuf(data) {
     this.ensureInitialized();
     this.gecoInstance.load_animation_protobuf(data);
-  }
-
-  ensureInitialized() {
-    if (!this.initialized || !this.gecoInstance) {
-      throw new Error('WASM Manager not initialized');
-    }
   }
 }

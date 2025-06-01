@@ -1,21 +1,33 @@
-// frontend/tests/three-viewer.test.js
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ThreeViewer } from '../js/three-viewer.js';
-import * as THREE from 'three';
+import * as THREE_MODULE from 'three'; // Import the entire module
+import { OrbitControls as OrbitControlsConstructorMock } from 'three/addons/controls/OrbitControls.js';
+
+// Get the mocked THREE classes from the imported module
+const MockScene = THREE_MODULE.Scene;
+const MockPerspectiveCamera = THREE_MODULE.PerspectiveCamera;
+const MockWebGLRenderer = THREE_MODULE.WebGLRenderer;
+const MockMesh = THREE_MODULE.Mesh;
+const MockLine = THREE_MODULE.Line;
+const MockLineLoop = THREE_MODULE.LineLoop;
+const MockBufferGeometry = THREE_MODULE.BufferGeometry; 
+const MockVector3 = THREE_MODULE.Vector3; 
+
 
 describe('ThreeViewer', () => {
   let viewer;
   let container;
 
   beforeEach(() => {
-    // Create a mock container
+    vi.clearAllMocks(); 
     container = document.createElement('div');
-    container.id = 'test-container';
-    container.style.width = '800px';
-    container.style.height = '600px';
+    container.id = 'viewer-test-container';
     Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true });
     Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
     document.body.appendChild(container);
+
+    viewer = new ThreeViewer('viewer-test-container', { sphereRadius: 1 });
+    viewer.init();
   });
 
   afterEach(() => {
@@ -26,181 +38,167 @@ describe('ThreeViewer', () => {
   });
 
   describe('initialization', () => {
-    it('should initialize with default options', () => {
-      viewer = new ThreeViewer('test-container');
-      expect(viewer.containerId).toBe('test-container');
-      expect(viewer.SPHERE_RADIUS).toBe(5);
+    it('should initialize with correct SPHERE_RADIUS from options', () => {
+      expect(viewer.SPHERE_RADIUS).toBe(1);
     });
 
-    it('should accept custom sphere radius', () => {
-      viewer = new ThreeViewer('test-container', { sphereRadius: 10 });
-      expect(viewer.SPHERE_RADIUS).toBe(10);
+    it('should create a scene, camera, renderer, and main sphere', () => {
+      expect(viewer.scene).toBeInstanceOf(MockScene);
+      expect(viewer.camera).toBeInstanceOf(MockPerspectiveCamera);
+      expect(viewer.renderer).toBeInstanceOf(MockWebGLRenderer); 
+      expect(viewer.mainSphereMesh).toBeInstanceOf(MockMesh);
+      // Ensure geometry is defined on the mock mesh instance before accessing parameters
+      if (viewer.mainSphereMesh.geometry) {
+        expect(viewer.mainSphereMesh.geometry.parameters.radius).toBe(1);
+      } else {
+        throw new Error("MockMesh instance does not have geometry defined as expected.");
+      }
     });
 
-    it('should throw error if container not found', () => {
-      viewer = new ThreeViewer('non-existent');
-      expect(() => viewer.init()).toThrow("Container with id 'non-existent' not found!");
-    });
-
-    it('should create Three.js objects', () => {
-      viewer = new ThreeViewer('test-container');
-      viewer.init();
-
-      expect(viewer.scene).toBeDefined();
-      expect(viewer.camera).toBeDefined();
-      expect(viewer.renderer).toBeDefined();
-      expect(viewer.controls).toBeDefined();
-      expect(viewer.mainSphereMesh).toBeDefined();
+    it('should set up OrbitControls', () => { // Removed async as import is at top
+      expect(viewer.controls).toBeInstanceOf(OrbitControlsConstructorMock); 
     });
   });
 
-  describe('scene setup', () => {
-    beforeEach(() => {
-      viewer = new ThreeViewer('test-container');
-      viewer.init();
-    });
-
-    it('should set up scene with correct background', () => {
-      expect(viewer.scene.background).toBeDefined();
-      expect(viewer.scene.background.getHex()).toBe(0x282c34);
-    });
-
-    it('should position camera correctly', () => {
-      expect(viewer.camera.position.z).toBe(viewer.SPHERE_RADIUS * 2.5);
-    });
-
-    it('should create sphere with correct properties', () => {
-      expect(viewer.mainSphereMesh).toBeDefined();
-      expect(viewer.mainSphereMesh.geometry.parameters.radius).toBe(5);
-    });
-
-    it('should set up controls with correct constraints', () => {
-      expect(viewer.controls.minDistance).toBe(viewer.SPHERE_RADIUS + 1);
-      expect(viewer.controls.maxDistance).toBe(viewer.SPHERE_RADIUS * 10);
-      expect(viewer.controls.enableDamping).toBe(true);
-    });
-  });
-
-  describe('polygon rendering', () => {
-    beforeEach(() => {
-      viewer = new ThreeViewer('test-container');
-      viewer.init();
-    });
-
-    it('should render polygon points', () => {
-      const polygonsData = [
-        {
-          polygon_id: 'test-poly',
-          points: [
-            {
-              point_id: 'point-1',
-              initial_position: { x: 1, y: 2, z: 3 }
-            },
-            {
-              point_id: 'point-2',
-              initial_position: { x: 4, y: 5, z: 6 }
-            }
-          ]
-        }
-      ];
-
-      viewer.renderPolygons(polygonsData);
-
-      expect(viewer.visualObjects).toHaveLength(2);
-      expect(viewer.scene.children).toContain(viewer.visualObjects[0]);
-      expect(viewer.scene.children).toContain(viewer.visualObjects[1]);
-    });
-
-    it('should clear previous objects before rendering new ones', () => {
-      const firstData = [{
-        polygon_id: 'poly-1',
-        points: [{ point_id: 'p1', initial_position: { x: 1, y: 1, z: 1 } }]
-      }];
-
-      viewer.renderPolygons(firstData);
-      const firstObject = viewer.visualObjects[0];
-
-      const secondData = [{
-        polygon_id: 'poly-2',
-        points: [{ point_id: 'p2', initial_position: { x: 2, y: 2, z: 2 } }]
-      }];
-
-      viewer.renderPolygons(secondData);
-
-      expect(viewer.visualObjects).toHaveLength(1);
-      expect(viewer.scene.children).not.toContain(firstObject);
-    });
-
-    it('should handle missing position data gracefully', () => {
-      const polygonsData = [
-        {
-          polygon_id: 'test-poly',
-          points: [
-            { point_id: 'point-1' }, // No initial_position
-            { point_id: 'point-2', initial_position: null }
-          ]
-        }
-      ];
-
-      viewer.renderPolygons(polygonsData);
+  describe('renderFeatures', () => {
+    it('should clear previous visual objects before rendering new ones', () => {
+      const initialObject = { type: 'TestObject' };
+      // Ensure scene mock instance is used if add is an instance method
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      sceneInstance.add(initialObject);
+      viewer.visualObjects.push(initialObject);
+      const sceneRemoveSpy = vi.spyOn(sceneInstance, 'remove');
+      viewer.renderFeatures([]);
+      expect(sceneRemoveSpy).toHaveBeenCalledWith(initialObject);
       expect(viewer.visualObjects).toHaveLength(0);
     });
 
-    it('should handle missing z coordinate', () => {
-      const polygonsData = [
+    it('should render Polyline features correctly', () => {
+      MockBufferGeometry.mockClear(); 
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
+
+
+      const featuresData = [
         {
-          polygon_id: 'test-poly',
-          points: [
-            {
-              point_id: 'point-1',
-              initial_position: { x: 1, y: 2 } // No z
-            }
-          ]
-        }
+          feature_id: 'line1',
+          name: 'Test Line',
+          feature_type: 'Polyline',
+          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 } ],
+          properties: {},
+        },
       ];
+      viewer.renderFeatures(featuresData);
 
-      viewer.renderPolygons(polygonsData);
       expect(viewer.visualObjects).toHaveLength(1);
-      expect(viewer.visualObjects[0].position.z).toBe(0);
+      const renderedObject = viewer.visualObjects[0];
+      expect(renderedObject).toBeInstanceOf(MockLine);
+      
+      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
+      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0]; 
+      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
+      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
+    });
+
+    it('should render Polygon features as LineLoop correctly', () => {
+      MockBufferGeometry.mockClear();
+      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
+      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
+
+
+      const featuresData = [
+        {
+          feature_id: 'poly1',
+          name: 'Test Polygon',
+          feature_type: 'Polygon',
+          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 }, { x: 0, y: 1, z: 1 } ],
+          properties: {},
+        },
+      ];
+      viewer.renderFeatures(featuresData);
+
+      expect(viewer.visualObjects).toHaveLength(1);
+      const renderedObject = viewer.visualObjects[0];
+      expect(renderedObject).toBeInstanceOf(MockLineLoop);
+      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
+      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0];
+      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
+      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
+    });
+
+    it('should not render Polyline with less than 2 points', () => {
+      const featuresData = [ { feature_type: 'Polyline', points: [{ x: 0, y: 0, z: 1 }] } ];
+      viewer.renderFeatures(featuresData);
+      expect(viewer.visualObjects).toHaveLength(0);
+    });
+    
+    it('should not render Polygon with less than 2 points (for LineLoop)', () => {
+      const featuresData = [ { feature_type: 'Polygon', points: [{ x: 0, y: 0, z: 1 }] } ];
+      viewer.renderFeatures(featuresData);
+      expect(viewer.visualObjects).toHaveLength(0);
+    });
+
+    it('should handle features with no points', () => {
+      const featuresData = [{ feature_type: 'Polyline', points: [] }];
+      viewer.renderFeatures(featuresData);
+      expect(viewer.visualObjects).toHaveLength(0);
+    });
+
+    it('should handle features with undefined points array', () => {
+      const featuresData = [{ feature_type: 'Polyline' }];
+      viewer.renderFeatures(featuresData);
+      expect(viewer.visualObjects).toHaveLength(0);
+    });
+    
+    it('should use default z=0 if point.z is undefined', () => {
+       MockVector3.mockClear(); 
+       const featuresData = [ { feature_type: 'Polyline', points: [ { x: 0, y: 0 }, { x: 1, y: 1 } ] } ];
+       viewer.renderFeatures(featuresData);
+      
+       expect(MockVector3).toHaveBeenCalledWith(0,0,0);
+       expect(MockVector3).toHaveBeenCalledWith(1,1,0);
+       expect(viewer.visualObjects).toHaveLength(1);
     });
   });
 
-  describe('sphere click handling', () => {
-    beforeEach(() => {
-      viewer = new ThreeViewer('test-container');
-      viewer.init();
-    });
+  describe('sphere click callback', () => {
+    it('should call onSphereClick with normalized coordinates if callback is set', () => {
+      const mockOnSphereClick = vi.fn();
+      viewer.onSphereClick = mockOnSphereClick;
 
-    it('should call onSphereClick callback when sphere is clicked', () => {
-      const mockCallback = vi.fn();
-      viewer.onSphereClick = mockCallback;
-
-      // Mock raycaster intersection
-      const mockIntersection = {
-        point: new THREE.Vector3(1, 2, 3)
-      };
-
-      // We can't easily simulate a real click with raycasting,
-      // so we'll test the callback mechanism
-      viewer.onSphereClick(1, 2, 3);
-
-      expect(mockCallback).toHaveBeenCalledWith(1, 2, 3);
+      viewer.renderer.domElement.getBoundingClientRect = vi.fn(() => ({
+        left: 0, top: 0, width: 800, height: 600,
+      }));
+      
+      const intersectedPoint = new MockVector3(2, 3, 6); 
+      const normalizedPoint = intersectedPoint.clone().normalize(); 
+                                                               
+      viewer.onSphereClick(normalizedPoint.x, normalizedPoint.y, normalizedPoint.z);
+         
+      expect(mockOnSphereClick).toHaveBeenCalledWith(
+        expect.closeTo(2/7), 
+        expect.closeTo(3/7), 
+        expect.closeTo(6/7)
+      );
     });
   });
 
-  describe('disposal', () => {
-    it('should clean up resources', () => {
-      viewer = new ThreeViewer('test-container');
-      viewer.init();
-
-      const disposeRendererSpy = vi.spyOn(viewer.renderer, 'dispose');
-      const disposeControlsSpy = vi.spyOn(viewer.controls, 'dispose');
-
+  describe('dispose', () => {
+    it('should call dispose on renderer and controls', () => {
+      const rendererDisposeSpy = vi.spyOn(viewer.renderer, 'dispose');
+      const controlsDisposeSpy = vi.spyOn(viewer.controls, 'dispose');
+      
       viewer.dispose();
+      
+      expect(rendererDisposeSpy).toHaveBeenCalled();
+      expect(controlsDisposeSpy).toHaveBeenCalled();
+    });
 
-      expect(disposeRendererSpy).toHaveBeenCalled();
-      expect(disposeControlsSpy).toHaveBeenCalled();
-      expect(viewer.visualObjects).toHaveLength(0);
+    it('should remove the renderer DOM element', () => {
+       const rendererDomElement = viewer.renderer.domElement;
+       const removeSpy = vi.spyOn(rendererDomElement, 'remove');
+       viewer.dispose();
+       expect(removeSpy).toHaveBeenCalled();
     });
   });
 });

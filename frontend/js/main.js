@@ -1,7 +1,7 @@
+// frontend/js/main.js
 import { ThreeViewer } from './three-viewer.js';
 import { WasmManager } from './wasm-manager.js';
 import { ApiClient } from './api-client.js';
-// createAppState is no longer used directly for Alpine, but its structure can inspire KlyjaApp's state
 
 export class KlyjaApp {
     constructor() {
@@ -10,57 +10,131 @@ export class KlyjaApp {
         this.apiClient = null;
         this.initialized = false;
 
-        // UI-related state, previously in appState
         this.uiState = {
             currentAnimationName: 'Untitled Animation',
             wasmAnimationName: 'Loading...',
-            newPolygonId: 'poly1',
-            animationIdToLoad: '',
             statusMessage: 'App Loaded.',
+            // New animation-related state
+            currentFrame: 0,
+            totalFrames: 100, // Will be synced with WASM
+            activeFeatureId: null,
+            lastSphereClickCoords: { x: 0, y: 0, z: 0 },
+            // UI input states (mirrors input fields for easier access)
+            featureNameInput: 'MyFeature',
+            featureTypeInput: 1, // Default to Polygon
+            featureAppearanceFrameInput: 0,
+            featureDisappearanceFrameInput: 100,
+            pointIdInput: 'p1',
         };
-
-        // DOM element references
         this.dom = {};
     }
 
     cacheDOMElements() {
+        // Existing
         this.dom.animNameInput = document.getElementById('anim-name-input');
         this.dom.wasmNameSpan = document.getElementById('wasm-name-span');
-        this.dom.polyIdInput = document.getElementById('poly-id-input');
-        this.dom.addPolyButton = document.getElementById('add-poly-button');
         this.dom.saveButton = document.getElementById('save-button');
         this.dom.loadIdInput = document.getElementById('load-id-input');
         this.dom.loadButton = document.getElementById('load-button');
         this.dom.statusMessageDiv = document.getElementById('status-message-div');
+
+        // New UI elements
+        this.dom.totalFramesInput = document.getElementById('total-frames-input');
+        this.dom.setTotalFramesButton = document.getElementById('set-total-frames-button');
+        this.dom.frameSlider = document.getElementById('frame-slider');
+        this.dom.currentFrameDisplay = document.getElementById('current-frame-display');
+        this.dom.maxFrameDisplay = document.getElementById('max-frame-display');
+        
+        this.dom.activeFeatureIdDisplay = document.getElementById('active-feature-id-display');
+        this.dom.featureNameInput = document.getElementById('feature-name-input');
+        this.dom.featureTypeSelect = document.getElementById('feature-type-select');
+        this.dom.featureAppearanceFrameInput = document.getElementById('feature-appearance-frame-input');
+        this.dom.featureDisappearanceFrameInput = document.getElementById('feature-disappearance-frame-input');
+        this.dom.createFeatureButton = document.getElementById('create-feature-button');
+        
+        this.dom.pointIdInput = document.getElementById('point-id-input');
+        this.dom.sphereClickCoordsDisplay = document.getElementById('sphere-click-coords');
+        this.dom.addPointButton = document.getElementById('add-point-button');
+        this.dom.addKeyframeButton = document.getElementById('add-keyframe-button');
     }
 
     bindUIEvents() {
+        // Animation Name
         this.dom.animNameInput.addEventListener('input', (e) => {
             this.uiState.currentAnimationName = e.target.value;
-            this.updateWasmName(e.target.value);
+            if (this.wasmManager && this.wasmManager.initialized) {
+                this.wasmManager.setAnimationName(this.uiState.currentAnimationName);
+                this.uiState.wasmAnimationName = this.wasmManager.getAnimationName();
+                this.syncUIToState();
+            }
         });
 
-        this.dom.polyIdInput.addEventListener('input', (e) => {
-            this.uiState.newPolygonId = e.target.value;
+        // Total Frames
+        this.dom.totalFramesInput.addEventListener('input', (e) => {
+            this.uiState.totalFrames = parseInt(e.target.value, 10) || this.uiState.totalFrames;
+        });
+        this.dom.setTotalFramesButton.addEventListener('click', () => {
+            if (this.wasmManager && this.wasmManager.initialized) {
+                this.wasmManager.setTotalFrames(this.uiState.totalFrames);
+                this.uiState.totalFrames = this.wasmManager.getTotalFrames(); // Get actual value from WASM
+                this.dom.frameSlider.max = this.uiState.totalFrames;
+                this.dom.featureDisappearanceFrameInput.value = this.uiState.totalFrames; // Sensible default
+                this.syncUIToState();
+                this.renderCurrentFrame();
+            }
         });
 
-        this.dom.addPolyButton.addEventListener('click', () => this.addPolygonPlaceholder());
-        this.dom.saveButton.addEventListener('click', () => this.saveAnimationWithUIUpdate());
+        // Frame Slider (Timeline)
+        this.dom.frameSlider.addEventListener('input', (e) => {
+            this.uiState.currentFrame = parseInt(e.target.value, 10);
+            this.syncUIToState();
+            this.renderCurrentFrame();
+        });
+
+        // Feature Creation
+        this.dom.featureNameInput.addEventListener('input', (e) => this.uiState.featureNameInput = e.target.value);
+        this.dom.featureTypeSelect.addEventListener('change', (e) => this.uiState.featureTypeInput = parseInt(e.target.value, 10));
+        this.dom.featureAppearanceFrameInput.addEventListener('input', (e) => this.uiState.featureAppearanceFrameInput = parseInt(e.target.value, 10));
+        this.dom.featureDisappearanceFrameInput.addEventListener('input', (e) => this.uiState.featureDisappearanceFrameInput = parseInt(e.target.value, 10));
         
-        this.dom.loadIdInput.addEventListener('input', (e) => {
-            this.uiState.animationIdToLoad = e.target.value;
-        });
+        this.dom.createFeatureButton.addEventListener('click', () => this.handleCreateFeature());
+
+        // Point & Keyframe Addition
+        this.dom.pointIdInput.addEventListener('input', (e) => this.uiState.pointIdInput = e.target.value);
+        this.dom.addPointButton.addEventListener('click', () => this.handleAddPointToFeature());
+        this.dom.addKeyframeButton.addEventListener('click', () => this.handleAddKeyframeToPoint());
+
+        // Save/Load (existing)
+        this.dom.saveButton.addEventListener('click', () => this.saveAnimationWithUIUpdate());
+        this.dom.loadIdInput.addEventListener('input', (e) => this.uiState.animationIdToLoad = e.target.value);
         this.dom.loadButton.addEventListener('click', () => this.loadAnimationWithUIUpdate());
     }
 
     syncUIToState() {
+        // Existing
         if (this.dom.animNameInput) this.dom.animNameInput.value = this.uiState.currentAnimationName;
         if (this.dom.wasmNameSpan) this.dom.wasmNameSpan.textContent = this.uiState.wasmAnimationName;
-        if (this.dom.polyIdInput) this.dom.polyIdInput.value = this.uiState.newPolygonId;
         if (this.dom.loadIdInput) this.dom.loadIdInput.value = this.uiState.animationIdToLoad;
         if (this.dom.statusMessageDiv) this.dom.statusMessageDiv.textContent = this.uiState.statusMessage;
-    }
 
+        // New
+        if (this.dom.totalFramesInput) this.dom.totalFramesInput.value = this.uiState.totalFrames;
+        if (this.dom.frameSlider) {
+            this.dom.frameSlider.value = this.uiState.currentFrame;
+            this.dom.frameSlider.max = this.uiState.totalFrames;
+        }
+        if (this.dom.currentFrameDisplay) this.dom.currentFrameDisplay.textContent = this.uiState.currentFrame;
+        if (this.dom.maxFrameDisplay) this.dom.maxFrameDisplay.textContent = this.uiState.totalFrames;
+        
+        if (this.dom.activeFeatureIdDisplay) this.dom.activeFeatureIdDisplay.textContent = this.uiState.activeFeatureId || 'None';
+        if (this.dom.featureNameInput) this.dom.featureNameInput.value = this.uiState.featureNameInput;
+        if (this.dom.featureTypeSelect) this.dom.featureTypeSelect.value = this.uiState.featureTypeInput;
+        if (this.dom.featureAppearanceFrameInput) this.dom.featureAppearanceFrameInput.value = this.uiState.featureAppearanceFrameInput;
+        if (this.dom.featureDisappearanceFrameInput) this.dom.featureDisappearanceFrameInput.value = this.uiState.featureDisappearanceFrameInput;
+        if (this.dom.pointIdInput) this.dom.pointIdInput.value = this.uiState.pointIdInput;
+        if (this.dom.sphereClickCoordsDisplay) this.dom.sphereClickCoordsDisplay.textContent = `(x: ${this.uiState.lastSphereClickCoords.x.toFixed(2)}, y: ${this.uiState.lastSphereClickCoords.y.toFixed(2)}, z: ${this.uiState.lastSphereClickCoords.z.toFixed(2)})`;
+    }
+    
     updateStatus(message) {
         this.uiState.statusMessage = message;
         this.syncUIToState();
@@ -68,121 +142,182 @@ export class KlyjaApp {
 
     async init() {
         if (this.initialized) return;
-        console.log('Initializing Klyja application (Vanilla JS)...');
+        console.log('Initializing Klyja application (Feature Edition)...');
         this.updateStatus('Initializing components...');
-
-        this.cacheDOMElements(); // Get references to DOM elements
-        this.syncUIToState();   // Set initial values from state
-        this.bindUIEvents();   // Add event listeners
-
+        this.cacheDOMElements();
+        
         try {
             this.wasmManager = new WasmManager();
             await this.wasmManager.init();
             this.uiState.wasmAnimationName = this.wasmManager.getAnimationName();
-            this.uiState.currentAnimationName = this.uiState.wasmAnimationName; // Sync names
-            this.updateStatus('WASM Ready.');
+            this.uiState.currentAnimationName = this.uiState.wasmAnimationName;
+            this.uiState.totalFrames = this.wasmManager.getTotalFrames(); // Get initial total frames
+            this.uiState.featureDisappearanceFrameInput = this.uiState.totalFrames; // Default
+
+            this.syncUIToState(); // Sync once before binding events to set initial values
+            this.bindUIEvents();   // Bind events after elements are cached and initial state synced
 
             this.apiClient = new ApiClient();
-
-            this.viewer = new ThreeViewer('viewer-container', { sphereRadius: 5 });
+            this.viewer = new ThreeViewer('viewer-container', { sphereRadius: 1 });
             this.viewer.init();
             this.viewer.onSphereClick = (x, y, z) => this.handleSphereClick(x, y, z);
             
-            this.renderCurrentState();
+            this.renderCurrentFrame(); // Initial render at frame 0
             this.initialized = true;
             this.updateStatus('Application initialized successfully.');
-            this.syncUIToState(); // Final sync after init
+            this.syncUIToState(); 
 
         } catch (error) {
-            console.error("Failed to initialize the application:", error);
-            this.updateStatus(`Initialization Error: ${error.message}`);
-            throw error;
+            console.error('Error during KlyjaApp initialization:', error);
+            this.updateStatus(`Initialization Error: ${error.message || 'Unknown error'}. Check console.`);
+            this.initialized = false;
         }
     }
 
-    updateWasmName(newName) {
-        if (this.wasmManager && this.wasmManager.initialized) {
-            try {
-                this.wasmManager.setAnimationName(newName);
-                this.uiState.wasmAnimationName = this.wasmManager.getAnimationName();
-                this.updateStatus(`Set WASM name to ${this.uiState.wasmAnimationName}`);
-            } catch (e) {
-                this.updateStatus(`Error setting WASM name: ${e.message}`);
-            }
-        } else {
-            this.updateStatus('Error: WASM not ready to update name.');
+    // --- New Event Handlers ---
+    handleCreateFeature() {
+        if (!this.wasmManager || !this.wasmManager.initialized) {
+            this.updateStatus('WASM not ready.'); return;
         }
-        this.syncUIToState();
-    }
-
-    addPolygonPlaceholder() {
-        if (this.wasmManager && this.wasmManager.initialized && this.uiState.newPolygonId) {
-            try {
-                this.wasmManager.addStaticPolygon(this.uiState.newPolygonId, 0.0, 5.0); // Example coords
-                this.updateStatus(`Added polygon ${this.uiState.newPolygonId}. Click sphere to add points.`);
-                this.renderCurrentState();
-
-                const match = this.uiState.newPolygonId.match(/^poly(\d+)$/);
-                if (match) {
-                    const nextId = parseInt(match[1]) + 1;
-                    this.uiState.newPolygonId = `poly${nextId}`;
-                }
-            } catch (e) {
-                 this.updateStatus(`Error adding polygon: ${e.message}`);
-            }
-        } else {
-            this.updateStatus('Error: WASM not ready or missing polygon ID.');
-        }
-        this.syncUIToState();
-    }
-
-    handleSphereClick(x, y, z) {
-        console.log("Sphere clicked at:", x, y, z);
-        if (this.wasmManager && this.wasmManager.initialized) {
-            try {
-                this.wasmManager.addPointToActivePolygon(x, y, z);
-                this.renderCurrentState();
-                this.updateStatus('Point added to active polygon.');
-            } catch (e) {
-                console.error("Error adding point:", e);
-                this.updateStatus(`Error adding point: ${e.message}`);
-            }
-        } else {
-            this.updateStatus('WASM not ready to add point.');
+        try {
+            const name = this.uiState.featureNameInput;
+            const typeVal = this.uiState.featureTypeInput;
+            const appearance = this.uiState.featureAppearanceFrameInput;
+            const disappearance = this.uiState.featureDisappearanceFrameInput;
+            
+            const featureId = this.wasmManager.createFeature(name, typeVal, appearance, disappearance);
+            this.uiState.activeFeatureId = featureId; // Set as active
+            this.updateStatus(`Created feature '${name}' (ID: ${featureId}). It is now active.`);
+            this.syncUIToState();
+            this.renderCurrentFrame();
+        } catch (e) {
+            this.updateStatus(`Error creating feature: ${e.message || e}`);
+            console.error("Error creating feature:", e);
         }
     }
 
-    renderCurrentState() {
+    handleAddPointToFeature() {
+        if (!this.wasmManager || !this.wasmManager.initialized) {
+            this.updateStatus('WASM not ready.'); return;
+        }
+        if (!this.uiState.activeFeatureId) {
+            this.updateStatus('No active feature selected to add point to.'); return;
+        }
+        try {
+            const pointId = this.uiState.pointIdInput; // Can be empty for auto-ID
+            const frame = this.uiState.currentFrame;
+            const { x, y, z } = this.uiState.lastSphereClickCoords;
+
+            const newPointId = this.wasmManager.addPointToActiveFeature(pointId, frame, x, y, z);
+            this.updateStatus(`Added point '${newPointId}' to feature '${this.uiState.activeFeatureId}' at frame ${frame}.`);
+            if (!pointId) this.uiState.pointIdInput = newPointId; // Update UI if ID was generated
+            this.syncUIToState();
+            this.renderCurrentFrame();
+        } catch (e) {
+            this.updateStatus(`Error adding point: ${e.message || e}`);
+            console.error("Error adding point:", e);
+        }
+    }
+
+    handleAddKeyframeToPoint() {
+        if (!this.wasmManager || !this.wasmManager.initialized) {
+            this.updateStatus('WASM not ready.'); return;
+        }
+        if (!this.uiState.activeFeatureId) {
+            this.updateStatus('No active feature selected.'); return;
+        }
+        if (!this.uiState.pointIdInput) {
+            this.updateStatus('Please enter a Point ID to add a keyframe to.'); return;
+        }
+        try {
+            const featureId = this.uiState.activeFeatureId;
+            const pointId = this.uiState.pointIdInput;
+            const frame = this.uiState.currentFrame;
+            const { x, y, z } = this.uiState.lastSphereClickCoords;
+
+            this.wasmManager.addPositionKeyframeToPoint(featureId, pointId, frame, x, y, z);
+            this.updateStatus(`Added keyframe to point '${pointId}' in feature '${featureId}' at frame ${frame}.`);
+            this.syncUIToState();
+            this.renderCurrentFrame();
+        } catch (e) {
+            this.updateStatus(`Error adding keyframe: ${e.message || e}`);
+            console.error("Error adding keyframe:", e);
+        }
+    }
+    
+    handleSphereClick(x, y, z) { // Now just updates coordinates
+        this.uiState.lastSphereClickCoords = { x, y, z };
+        this.syncUIToState(); // Update the displayed coordinates
+        // console.log("Sphere clicked, coords stored:", this.uiState.lastSphereClickCoords);
+    }
+
+    renderCurrentFrame() { // Renamed from renderCurrentState
         if (!this.viewer || !this.wasmManager || !this.wasmManager.initialized) {
             console.error("Cannot render - components not ready");
             this.updateStatus('Cannot render: components not fully initialized.');
             return;
         }
-        console.log("Rendering current WASM state...");
-        const polygonsData = this.wasmManager.getPolygonsData();
-        this.viewer.renderPolygons(polygonsData);
+        const frame = this.uiState.currentFrame;
+        // console.log(`Requesting render for frame: ${frame}`);
+        try {
+            const featuresDataJson = this.wasmManager.getRenderableFeaturesJsonAtFrame(frame);
+            const featuresData = JSON.parse(featuresDataJson);
+            this.viewer.renderFeatures(featuresData); // Call new method in ThreeViewer
+        } catch (e) {
+            console.error("Error during renderCurrentFrame:", e);
+            this.updateStatus(`Render error: ${e.message || e}`);
+        }
     }
 
     async saveAnimationWithUIUpdate() {
-        this.updateStatus("Saving animation...");
+        this.updateStatus('Saving animation...');
         if (!this.wasmManager || !this.wasmManager.initialized || !this.apiClient) {
             this.updateStatus('Cannot save: components not ready.');
-            return;
+            console.error('Attempted to save when components were not ready.');
+            return; // Or throw an error
         }
+
         try {
+            const currentNameInUI = this.dom.animNameInput.value;
+            if (this.wasmManager.getAnimationName() !== currentNameInUI) {
+                this.wasmManager.setAnimationName(currentNameInUI);
+                this.uiState.currentAnimationName = currentNameInUI;
+                this.uiState.wasmAnimationName = currentNameInUI; // Update UI state
+            }
             const protobufData = this.wasmManager.getAnimationProtobuf();
+            if (!protobufData || protobufData.length === 0) {
+                this.updateStatus('Save failed: No animation data to save.');
+                console.error('Save failed: protobufData is empty.');
+                return;
+            }
+
             const result = await this.apiClient.saveAnimation(protobufData);
-            this.updateStatus(`Save successful! ID: ${result.id}`);
+            this.updateStatus(`Save successful! Animation ID: ${result.id}`);
             console.log('Save successful:', result);
+
+            if (this.dom.loadIdInput) {
+                this.dom.loadIdInput.value = result.id;
+                this.uiState.animationIdToLoad = result.id.toString();
+            }
+            this.syncUIToState(); // Reflect potential changes in UI state
             return result;
+
         } catch (error) {
-            this.updateStatus(`Save failed: ${error.message}`);
+            this.updateStatus(`Save failed: ${error.message || 'Unknown error'}`);
             console.error('Save failed:', error);
-            throw error;
+            throw error; // Re-throw if you want calling code to handle it further
         }
     }
 
-    async loadAnimationWithUIUpdate() {
+    async loadAnimationWithUIUpdate() { 
+        // ... as before, but after load, make sure to sync totalFrames and currentFrame to UI
+        // Example addition after successful load:
+        // this.uiState.totalFrames = this.wasmManager.getTotalFrames();
+        // this.uiState.currentFrame = 0; // Reset to first frame
+        // this.syncUIToState();
+        // this.renderCurrentFrame();
+
+        // --- Existing loadAnimationWithUIUpdate code ---
         const idToLoad = this.uiState.animationIdToLoad;
         const numericId = parseInt(idToLoad);
 
@@ -198,13 +333,18 @@ export class KlyjaApp {
         try {
             const protobufData = await this.apiClient.loadAnimation(numericId);
             this.wasmManager.loadAnimationProtobuf(protobufData);
-            this.renderCurrentState();
             
+            // Update state from loaded animation
             this.uiState.currentAnimationName = this.wasmManager.getAnimationName();
             this.uiState.wasmAnimationName = this.uiState.currentAnimationName;
-            // this.uiState.animationIdToLoad = ''; // Clear input after load
+            this.uiState.totalFrames = this.wasmManager.getTotalFrames();
+            this.uiState.currentFrame = 0; // Reset to first frame on load
+            // this.uiState.animationIdToLoad = ''; // Optional: Clear input after load
+            
+            this.syncUIToState(); // Refresh UI
+            this.renderCurrentFrame(); // Render the newly loaded state at frame 0
+            
             this.updateStatus(`Animation loaded: '${this.uiState.currentAnimationName}' (ID: ${numericId})`);
-            this.syncUIToState(); // Refresh UI with new name and cleared load ID
             console.log(`Animation loaded, name: ${this.uiState.currentAnimationName}`);
             return this.uiState.currentAnimationName;
         } catch (error) {
@@ -213,37 +353,44 @@ export class KlyjaApp {
             throw error;
         }
     }
-
     dispose() {
         if (this.viewer) {
             this.viewer.dispose();
         }
-        // Remove event listeners if any were added to window or document directly
     }
 }
 
-// Create and initialize the app
 let klyjaApp = null;
 
-async function startApp() {
+// Define startApp as a constant before it's used in the if/else block below.
+const startApp = async () => {
+    console.log("startApp called"); // For debugging
     klyjaApp = new KlyjaApp();
     try {
         await klyjaApp.init();
     } catch (error) {
-        // Error is already logged and status updated by klyjaApp.init()
+        // Log the error from init more explicitly if it happens here
+        console.error("Error during klyjaApp.init():", error); 
         const statusDiv = document.getElementById('status-message-div');
-        if (statusDiv && !klyjaApp.initialized) { // Check if a more specific message was already set
+        // Check if klyjaApp was even created before checking klyjaApp.initialized
+        if (statusDiv && (!klyjaApp || !klyjaApp.initialized)) { 
             statusDiv.textContent = 'Critical error during application startup. Check console.';
         }
     }
-}
+};
 
-// Start when DOM is ready
+// This is the entry point logic for your application.
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
+    // The DOM is not yet ready, so wait for the DOMContentLoaded event.
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("DOMContentLoaded event fired. Calling startApp...");
+        startApp();
+    });
 } else {
+    // The DOM is already loaded, so we can start the app immediately.
+    console.log("DOM already loaded. Calling startApp directly...");
     startApp();
 }
 
-// Export for testing or debugging if needed
-export { klyjaApp };
+// Your export line (currently commented out) would go here if you needed to export klyjaApp
+// export { klyjaApp };

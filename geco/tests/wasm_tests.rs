@@ -1,117 +1,214 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    //use assert_matches::assert_matches;
+    use geco::Geco;
+    //    use wasm_bindgen::JsValue;
     use wasm_bindgen_test::*;
 
-    use geco::Geco;
-    //use prost::Message;
-    //use wasm_bindgen::JsValue;
-
-    // Configure test environment for browser-like testing
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    fn test_geco_initialization() {
-        let geco = Geco::new();
-
-        // Verify the animation has default properties
+    fn test_geco_initialization_and_name() {
+        let mut geco = Geco::new();
         assert_eq!(geco.get_animation_name(), "Untitled Animation");
-
-        // Verify empty polygon data
-        let polygons_json = geco.get_polygons_json();
-        assert_eq!(polygons_json, "[]");
+        geco.set_animation_name("WASM Test".to_string());
+        assert_eq!(geco.get_animation_name(), "WASM Test");
     }
 
     #[wasm_bindgen_test]
-    fn test_set_animation_name() {
+    fn test_total_frames_management() {
         let mut geco = Geco::new();
-        let new_name = "Test Animation";
-
-        geco.set_animation_name(new_name.to_string());
-        assert_eq!(geco.get_animation_name(), new_name);
+        assert_eq!(geco.get_total_frames(), 100); // Default
+        geco.set_total_frames(200);
+        assert_eq!(geco.get_total_frames(), 200);
+        geco.set_total_frames(0); // Invalid, should not change
+        assert_eq!(geco.get_total_frames(), 200);
     }
 
     #[wasm_bindgen_test]
-    fn test_add_static_polygon() {
+    fn test_create_feature_and_set_active() {
         let mut geco = Geco::new();
+        let feature_id1 = geco.create_feature("MyPoly".to_string(), 1, 0, 10).unwrap();
+        // Use the new getter method
+        assert!(geco.get_active_feature_id().is_some());
+        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id1);
 
-        // Add a polygon
-        geco.add_static_polygon("poly1".to_string(), 1.0, 2.0);
+        let feature_id2 = geco.create_feature("MyLine".to_string(), 2, 5, 15).unwrap();
+        // Use the new getter method
+        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id2); // Should be last created
 
-        // Verify the JSON output contains the polygon
-        let polygons_json = geco.get_polygons_json();
-        assert!(polygons_json.contains("poly1"));
-        assert!(polygons_json.contains("1.0"));
-        assert!(polygons_json.contains("2.0"));
+        let features_json = geco.get_renderable_features_json_at_frame(5);
+        assert!(features_json.contains("MyPoly")); // This should now pass
+        assert!(features_json.contains("MyLine"));
     }
 
     #[wasm_bindgen_test]
-    fn test_add_point_to_active_polygon() {
+    fn test_create_feature_invalid_type_wasm() {
         let mut geco = Geco::new();
-
-        // Add a polygon first
-        geco.add_static_polygon("poly2".to_string(), 1.0, 1.0);
-
-        // Add a point to it
-        geco.add_point_to_active_polygon(2.0, 3.0, 0.0);
-
-        // Verify polygon JSON has both points
-        let polygons_json = geco.get_polygons_json();
-        assert!(polygons_json.contains("poly2-pt0"));
-        assert!(polygons_json.contains("poly2-pt1"));
+        let result = geco.create_feature("Invalid Type".to_string(), 99, 0, 100);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().as_string().unwrap_or_default();
+        assert_eq!(err_msg, "Invalid feature type value");
     }
 
     #[wasm_bindgen_test]
-    fn test_protobuf_serialization() {
+    fn test_add_point_no_active_feature_wasm() {
         let mut geco = Geco::new();
+        let result = geco.add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().as_string().unwrap_or_default();
+        assert_eq!(err_msg, "No active feature selected");
+    }
 
-        // Setup test data
-        geco.set_animation_name("Protobuf Test".to_string());
-        geco.add_static_polygon("poly3".to_string(), 5.0, 6.0);
-        geco.add_point_to_active_polygon(7.0, 8.0, 0.0);
+    #[wasm_bindgen_test]
+    fn test_add_point_duplicate_id_in_feature_wasm() {
+        let mut geco = Geco::new();
+        let _feature_id = geco.create_feature("Test".to_string(), 1, 0, 10).unwrap();
+        geco.add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
+            .unwrap();
+        let result = geco.add_point_to_active_feature("p1".to_string(), 1, 2.0, 0.0, Some(0.0));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().as_string().unwrap_or_default();
+        assert!(err_msg.contains("already exists in feature"));
+    }
 
-        // Test serialization
-        let bytes = geco.get_animation_protobuf();
+    #[wasm_bindgen_test]
+    fn test_add_point_to_active_feature_wasm() {
+        let mut geco = Geco::new();
+        geco.create_feature("TestFeat".to_string(), 1, 0, 10)
+            .unwrap();
+        let point_id = geco
+            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 2.0, Some(0.5))
+            .unwrap();
+        assert_eq!(point_id, "p1");
+
+        let features_json = geco.get_renderable_features_json_at_frame(0);
+        assert!(features_json.contains("\"name\":\"TestFeat\""));
+        // Coordinates are normalized: x=1.0, y=2.0, z=0.5
+        // mag = sqrt(1+4+0.25) = sqrt(5.25) approx 2.29128
+        // norm_x = 1.0 / 2.29128 approx 0.4364
+        // norm_y = 2.0 / 2.29128 approx 0.8728
+        // norm_z = 0.5 / 2.29128 approx 0.2182
+        // Check for one of these, e.g., x. The exact float representation can be tricky.
+        assert!(features_json.contains("\"x\":0.4364")); // Or a more robust float comparison/parsing
+    }
+
+    #[wasm_bindgen_test]
+    fn test_add_point_empty_id_generates_one() {
+        let mut geco = Geco::new();
+        geco.create_feature("GenIdFeat".to_string(), 1, 0, 10)
+            .unwrap();
+        let point_id = geco
+            .add_point_to_active_feature("".to_string(), 0, 1.0, 0.0, None) // x=1, y=0, z defaults to 0 -> normalized (1,0,0)
+            .unwrap();
+        assert!(point_id.starts_with("point-"));
+
+        let features_json = geco.get_renderable_features_json_at_frame(0);
+        // The point_id string itself is not in the JSON output.
+        // Instead, check that the feature "GenIdFeat" exists and contains point data.
+        // The added point (1.0, 0.0, 0.0) will be normalized to (1.0, 0.0, 0.0).
+        // A simple check:
+        assert!(features_json.contains("\"name\":\"GenIdFeat\""));
+        assert!(features_json.contains("\"points\":[{\"x\":1.0")); // Check for x-coordinate of the point
+    }
+
+    #[wasm_bindgen_test]
+    fn test_add_keyframe_to_point_wasm() {
+        let mut geco = Geco::new();
+        let feature_id = geco
+            .create_feature("KeyframeFeat".to_string(), 2, 0, 20)
+            .unwrap();
+        let point_id = geco
+            .add_point_to_active_feature("ptKey".to_string(), 0, 1.0, 0.0, Some(0.0))
+            .unwrap();
+
+        geco.add_position_keyframe_to_point(
+            feature_id.clone(),
+            point_id.clone(),
+            10, // frame
+            0.0,
+            1.0,
+            Some(0.0), // new position (normalized to 0,1,0)
+        )
+        .unwrap();
+
+        let features_json_frame5 = geco.get_renderable_features_json_at_frame(5);
+        // Interpolated point at frame 5 (halfway between (1,0,0) and (0,1,0) via SLERP)
+        // Should be (cos(pi/4), sin(pi/4), 0) = (0.7071, 0.7071, 0)
+        assert!(features_json_frame5.contains("\"x\":0.7071"));
+        assert!(features_json_frame5.contains("\"y\":0.7071"));
+
+        let features_json_frame10 = geco.get_renderable_features_json_at_frame(10);
+        assert!(features_json_frame10.contains("\"y\":1.0")); // At frame 10, should be at the keyframe (0,1,0)
+    }
+
+    #[wasm_bindgen_test]
+    fn test_get_renderable_features_json_at_frame_wasm() {
+        let mut geco = Geco::new();
+        geco.create_feature("F1".to_string(), 1, 0, 10).unwrap();
+        geco.add_point_to_active_feature("p1_f1".to_string(), 0, 1.0, 0.0, None) // (1,0,0)
+            .unwrap();
+
+        geco.create_feature("F2".to_string(), 2, 5, 15).unwrap();
+        geco.add_point_to_active_feature("p1_f2".to_string(), 5, 0.0, 1.0, None) // (0,1,0)
+            .unwrap();
+
+        let json_frame0 = geco.get_renderable_features_json_at_frame(0);
+        assert!(json_frame0.contains("F1"));
+        assert!(!json_frame0.contains("F2"));
+
+        let json_frame7 = geco.get_renderable_features_json_at_frame(7);
+        assert!(json_frame7.contains("F1"));
+        assert!(json_frame7.contains("F2"));
+
+        let json_frame12 = geco.get_renderable_features_json_at_frame(12);
+        assert!(!json_frame12.contains("F1")); // F1 disappears after frame 10
+        assert!(json_frame12.contains("F2"));
+
+        let json_frame_out_of_bounds = geco.get_renderable_features_json_at_frame(100);
+        assert_eq!(json_frame_out_of_bounds, "[]");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_protobuf_cycle_wasm() {
+        let mut geco1 = Geco::new();
+        geco1.set_animation_name("Proto Cycle".to_string());
+        geco1.set_total_frames(30);
+        let fid = geco1
+            .create_feature("ProtoFeat".to_string(), 1, 0, 20)
+            .unwrap();
+        let pid = geco1
+            .add_point_to_active_feature("p_proto".to_string(), 0, 1.0, 0.0, Some(0.0)) // (1,0,0)
+            .unwrap();
+        geco1
+            .add_position_keyframe_to_point(fid.clone(), pid.clone(), 10, 0.0, 1.0, Some(0.0)) // (0,1,0)
+            .unwrap();
+
+        let bytes = geco1.get_animation_protobuf();
         assert!(!bytes.is_empty());
 
-        // Create a new instance
         let mut geco2 = Geco::new();
+        let load_result = geco2.load_animation_protobuf(&bytes);
+        assert!(
+            load_result.is_ok(),
+            "Protobuf loading failed: {:?}",
+            load_result.err()
+        );
 
-        // Load the serialized data
-        let result = geco2.load_animation_protobuf(&bytes);
-        assert!(result.is_ok());
+        assert_eq!(geco2.get_animation_name(), "Proto Cycle");
+        assert_eq!(geco2.get_total_frames(), 30);
 
-        // Verify the deserialized data
-        assert_eq!(geco2.get_animation_name(), "Protobuf Test");
-        let polygons_json = geco2.get_polygons_json();
-        assert!(polygons_json.contains("poly3"));
-        assert!(polygons_json.contains("poly3-pt0"));
-        assert!(polygons_json.contains("poly3-pt1"));
+        let features_json = geco2.get_renderable_features_json_at_frame(5); // Halfway between (1,0,0) and (0,1,0)
+        assert!(features_json.contains("ProtoFeat"));
+        assert!(features_json.contains("\"x\":0.7071")); // slerp
     }
 
     #[wasm_bindgen_test]
-    fn test_invalid_protobuf_deserialization() {
+    fn test_load_invalid_protobuf_wasm() {
         let mut geco = Geco::new();
-
-        // Create invalid protobuf data
-        let invalid_data = vec![0, 1, 2, 3];
-
-        // Try to load it
+        let invalid_data = vec![0, 1, 2, 3, 4, 5];
         let result = geco.load_animation_protobuf(&invalid_data);
-
-        // Verify it returns an error
         assert!(result.is_err());
-    }
-
-    #[wasm_bindgen_test]
-    fn test_add_point_without_active_polygon() {
-        let mut geco = Geco::new();
-
-        // Try to add a point without creating a polygon first
-        geco.add_point_to_active_polygon(1.0, 2.0, 3.0);
-
-        // Verify nothing changed
-        let polygons_json = geco.get_polygons_json();
-        assert_eq!(polygons_json, "[]");
+        let err_msg = result.unwrap_err().as_string().unwrap_or_default();
+        assert!(err_msg.contains("Failed to decode Protobuf"));
     }
 }

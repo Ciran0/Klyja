@@ -1,18 +1,16 @@
 // backend/tests/integration_tests.rs
 mod common;
 
-use axum::http::StatusCode; // Removed Request and body::Body
+use axum::http::StatusCode;
 use axum_test::TestServer;
-use backend::protobuf_gen::MapAnimation;
+// Corrected imports - Feature and FeatureType instead of Polygon
+use backend::protobuf_gen::{Feature, FeatureType, MapAnimation};
 use backend::{handlers, DbPool};
-use bytes::Bytes; // Import Bytes
+use bytes::Bytes;
 use common::{fixtures, TestDb};
 use prost::Message;
 use rstest::*;
-// tower::ServiceExt is not directly needed if you are using TestServer methods
-// If you were manually building a service and calling it, then ServiceExt would be used.
-// For now, let's comment it out as TestServer abstracts its usage.
-// use tower::ServiceExt; // for oneshot
+use std::collections::HashMap;
 
 /// Creates a test server with the test database
 async fn create_test_app(pool: DbPool) -> TestServer {
@@ -51,11 +49,11 @@ async fn test_save_animation_success() {
     let server = create_test_app(test_db.pool.clone()).await;
 
     let animation_data_vec = fixtures::create_test_animation_proto("Test Animation");
-    let animation_data_bytes = Bytes::from(animation_data_vec); // Convert to Bytes
+    let animation_data_bytes = Bytes::from(animation_data_vec);
 
     let response = server
         .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::CREATED);
@@ -71,11 +69,11 @@ async fn test_save_animation_invalid_protobuf() {
     let server = create_test_app(test_db.pool.clone()).await;
 
     let invalid_data_vec = vec![0xFF, 0xFF, 0xFF, 0xFF];
-    let invalid_data_bytes = Bytes::from(invalid_data_vec); // Convert to Bytes
+    let invalid_data_bytes = Bytes::from(invalid_data_vec);
 
     let response = server
         .post("/api/save_animation")
-        .bytes(invalid_data_bytes) // Pass Bytes
+        .bytes(invalid_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
@@ -103,8 +101,7 @@ async fn test_load_animation_success() {
 
     assert_eq!(response.status_code(), StatusCode::OK);
 
-    // Get Bytes directly from the response by consuming it
-    let body_bytes: Bytes = response.into_bytes(); // Changed from response.bytes()
+    let body_bytes: Bytes = response.into_bytes();
     let decoded = MapAnimation::decode(body_bytes).expect("Failed to decode response");
     assert_eq!(decoded.name, "Load Test");
 }
@@ -128,11 +125,11 @@ async fn test_save_and_load_flow() {
     let server = create_test_app(test_db.pool.clone()).await;
 
     let animation_data_vec = fixtures::create_test_animation_proto("Flow Test");
-    let animation_data_bytes = Bytes::from(animation_data_vec.clone()); // Clone Vec for Bytes, keep original for assert
+    let animation_data_bytes = Bytes::from(animation_data_vec.clone());
 
     let save_response = server
         .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(save_response.status_code(), StatusCode::CREATED);
@@ -145,8 +142,8 @@ async fn test_save_and_load_flow() {
 
     assert_eq!(load_response.status_code(), StatusCode::OK);
 
-    let loaded_bytes: Bytes = load_response.into_bytes(); // Changed from load_response.bytes()
-    assert_eq!(loaded_bytes.to_vec(), animation_data_vec); // Compare Vec<u8> with Vec<u8>
+    let loaded_bytes: Bytes = load_response.into_bytes();
+    assert_eq!(loaded_bytes.to_vec(), animation_data_vec);
 }
 
 #[rstest]
@@ -154,32 +151,39 @@ async fn test_save_and_load_flow() {
 #[case::medium(100)]
 #[case::large(500)]
 #[tokio::test]
-async fn test_save_animation_various_sizes(#[case] polygon_count: usize) {
+async fn test_save_animation_various_sizes(#[case] feature_count: usize) {
+    // Changed polygon_count to feature_count
     let test_db = TestDb::new();
     let server = create_test_app(test_db.pool.clone()).await;
 
     let mut animation = MapAnimation {
         animation_id: format!("size-test-{}", uuid::Uuid::new_v4()),
-        name: format!("Size Test {}", polygon_count),
+        name: format!("Size Test {}", feature_count),
         total_frames: 30,
-        polygons: Vec::with_capacity(polygon_count),
+        features: Vec::with_capacity(feature_count), // Changed from polygons
     };
 
-    for i in 0..polygon_count {
-        let polygon = backend::protobuf_gen::Polygon {
-            polygon_id: format!("poly-{}", i),
-            points: vec![],
-            properties: Default::default(),
+    for i in 0..feature_count {
+        // Create a Feature instead of a Polygon
+        let feature = Feature {
+            feature_id: format!("feature-{}", i),
+            name: format!("Feature {}", i),
+            r#type: FeatureType::Polygon as i32, // Example type
+            appearance_frame: 0,
+            disappearance_frame: 30,
+            point_animation_paths: vec![], // Add empty paths or mock data as needed
+            structure_snapshots: vec![],   // Add empty snapshots or mock data
+            properties: HashMap::new(),
         };
-        animation.polygons.push(polygon);
+        animation.features.push(feature); // Changed from polygons
     }
 
     let animation_data_vec = animation.encode_to_vec();
-    let animation_data_bytes = Bytes::from(animation_data_vec); // Convert to Bytes
+    let animation_data_bytes = Bytes::from(animation_data_vec);
 
     let response = server
         .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::CREATED);

@@ -5,7 +5,6 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>klyja - Spherical Map Animation</title>
         <link rel="stylesheet" href="/css/styles.css">
-        <script src="https://unpkg.com/htmx.org@latest/dist/htmx.min.js"></script>
         <script type="importmap">
     {
         "imports": {
@@ -17,29 +16,72 @@
         </script>
         <script type="module" src="/js/main.js"></script>
         <style>
-        body { display: flex; flex-direction: column; height: 100vh; margin: 0; }
-        .main-content { display: flex; flex: 1; overflow: hidden; }
+        body { display: flex; flex-direction: column; height: 100vh; margin: 0; font-family: sans-serif; }
+        .main-content { display: flex; flex: 1; overflow: hidden; height: 100%}
         #viewer-container { flex-grow: 1; border-right: 1px solid #ccc; min-width: 300px; }
-        #controls-panel { width: 250px; padding: 15px; overflow-y: auto; }
-        #controls-panel label, #controls-panel input, #controls-panel button { display: block; margin-bottom: 10px; width: 95%; }
+        #controls-panel { width: 300px; padding: 15px; overflow-y: auto; font-size: 0.9em; }
+        #controls-panel h3, #controls-panel h4 { margin-top: 15px; margin-bottom: 5px; }
+        #controls-panel label, #controls-panel input, #controls-panel button, #controls-panel select { display: block; margin-bottom: 8px; width: 95%; box-sizing: border-box; }
+        #controls-panel input[type="number"] { width: 100px; }
         .status-message { margin-top: 15px; font-style: italic; color: #555; }
+        hr { margin: 15px 0; }
         </style>
     </head>
     <body>
         <div class="main-content">
             <div id="viewer-container"></div>
             <aside id="controls-panel">
-                <h3>Controls</h3>
+                <h3>Animation Settings</h3>
                 <label for="anim-name-input">Animation Name:</label>
                 <input type="text" id="anim-name-input" placeholder="Untitled Animation">
-                <p style="font-size: 0.8em;">
-                    Current WASM Name: <span id="wasm-name-span">Loading...</span>
+                <p style="font-size: 0.9em;">
+                    WASM Name: <span id="wasm-name-span">Loading...</span>
                 </p>
-                <label for="poly-id-input">New Polygon ID:</label>
-                <input type="text" id="poly-id-input" placeholder="e.g., poly1">
-                <button id="add-poly-button">Add Test Polygon</button>
-                <p style="font-size: 0.8em;">Click on sphere to add points to the *last added* polygon.</p>
+                <label for="total-frames-input">Total Frames:</label>
+                <input type="number" id="total-frames-input" value="100" min="1">
+                <button id="set-total-frames-button">Set Total Frames</button>
                 <hr>
+                <h3>Timeline</h3>
+                <label for="frame-slider">
+                    Current Frame: <span id="current-frame-display">0</span> / <span id="max-frame-display">100</span>
+                </label>
+                <input type="range"
+                       id="frame-slider"
+                       min="0"
+                       value="0"
+                       max="100"
+                       style="width: 100%">
+                <hr>
+                <h3>Feature Management</h3>
+                <p>
+                    Active Feature ID: <span id="active-feature-id-display">None</span>
+                </p>
+                <h4>Create New Feature</h4>
+                <label for="feature-name-input">Feature Name:</label>
+                <input type="text" id="feature-name-input" placeholder="MyContinent">
+                <label for="feature-type-select">Type:</label>
+                <select id="feature-type-select">
+                    <option value="1">Polygon</option>
+                    <option value="2">Polyline</option>
+                </select>
+                <label for="feature-appearance-frame-input">Appearance Frame:</label>
+                <input type="number" id="feature-appearance-frame-input" value="0" min="0">
+                <label for="feature-disappearance-frame-input">Disappearance Frame:</label>
+                <input type="number"
+                       id="feature-disappearance-frame-input"
+                       value="100"
+                       min="0">
+                <button id="create-feature-button">Create Feature & Set Active</button>
+                <h4>Add to Active Feature</h4>
+                <label for="point-id-input">Point ID (optional for new points):</label>
+                <input type="text" id="point-id-input" placeholder="p1">
+                <p>
+                    <em>Sphere Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z: N/A)</span></em>
+                </p>
+                <button id="add-point-button">Add Point (at current frame, using sphere click coords)</button>
+                <button id="add-keyframe-button">Add Keyframe (for Point ID, at current frame, using sphere click coords)</button>
+                <hr>
+                <h3>Save / Load</h3>
                 <button id="save-button">Save Animation</button>
                 <hr>
                 <label for="load-id-input">Animation ID to Load:</label>

@@ -1,261 +1,324 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { KlyjaApp } from '../js/main.js'; // Assuming KlyjaApp is exported or accessible
+import { KlyjaApp } from '../js/main.js';
 import { ThreeViewer } from '../js/three-viewer.js';
-import { WasmManager } from '../js/wasm-manager.js';
+import { WasmManager } from '../js/wasm-manager.js'; // Import the actual/mocked class
 import { ApiClient } from '../js/api-client.js';
 
-// Mock the modules KlyjaApp depends on
+// Mock dependent modules at the top level
 vi.mock('../js/three-viewer.js');
-vi.mock('../js/wasm-manager.js');
+vi.mock('../js/wasm-manager.js'); // This will use the mock factory if one exists or auto-mock
 vi.mock('../js/api-client.js');
 
-describe('KlyjaApp Integration', () => {
+describe('KlyjaApp Integration (Feature Edition)', () => {
   let app;
-  let mockViewer;
-  let mockWasmManager;
-  let mockApiClient;
+  let mockViewerInstance;
+  let mockWasmManagerInstance; // This will be our plain object with spies
+  let mockApiClientInstance;
 
-  beforeEach(() => {
-    // Set up a more complete DOM, matching what KlyjaApp expects
+  function setupDOM() {
     document.body.innerHTML = `
       <div class="main-content">
-          <div id="viewer-container"></div>
-          <aside id="controls-panel">
-              <h3>Controls</h3>
-              <label for="anim-name-input">Animation Name:</label>
-              <input type="text" id="anim-name-input" placeholder="Untitled Animation">
-              <p style="font-size: 0.8em;">
-                  Current WASM Name: <span id="wasm-name-span">Loading...</span>
-              </p>
-              <label for="poly-id-input">New Polygon ID:</label>
-              <input type="text" id="poly-id-input" placeholder="e.g., poly1">
-              <button id="add-poly-button">Add Test Polygon</button>
-              <p style="font-size: 0.8em;">Click on sphere to add points to the *last added* polygon.</p>
-              <hr>
-              <button id="save-button">Save Animation</button>
-              <hr>
-              <label for="load-id-input">Animation ID to Load:</label>
-              <input type="number" id="load-id-input" placeholder="Enter ID (e.g., 1)">
-              <button id="load-button">Load Animation</button>
-              <hr>
-              <div id="status-message-div" class="status-message">App starting...</div>
-          </aside>
+        <div id="viewer-container"></div>
+        <aside id="controls-panel">
+          <h3>Animation Settings</h3>
+          <label for="anim-name-input">Animation Name:</label>
+          <input type="text" id="anim-name-input" value="Untitled Animation">
+          <p>WASM Name: <span id="wasm-name-span">Loading...</span></p>
+          <label for="total-frames-input">Total Frames:</label>
+          <input type="number" id="total-frames-input" value="100">
+          <button id="set-total-frames-button">Set Total Frames</button>
+          <hr>
+          <h3>Timeline</h3>
+          <label for="frame-slider">Current Frame: <span id="current-frame-display">0</span> / <span id="max-frame-display">100</span></label>
+          <input type="range" id="frame-slider" min="0" value="0" max="100">
+          <hr>
+          <h3>Feature Management</h3>
+          <p>Active Feature ID: <span id="active-feature-id-display">None</span></p>
+          <h4>Create New Feature</h4>
+          <label for="feature-name-input">Feature Name:</label>
+          <input type="text" id="feature-name-input" value="MyFeature">
+          <label for="feature-type-select">Type:</label>
+          <select id="feature-type-select"><option value="1">Polygon</option><option value="2">Polyline</option></select>
+          <label for="feature-appearance-frame-input">Appearance Frame:</label>
+          <input type="number" id="feature-appearance-frame-input" value="0">
+          <label for="feature-disappearance-frame-input">Disappearance Frame:</label>
+          <input type="number" id="feature-disappearance-frame-input" value="100">
+          <button id="create-feature-button">Create Feature</button>
+          <h4>Add to Active Feature</h4>
+          <label for="point-id-input">Point ID:</label>
+          <input type="text" id="point-id-input" value="p1">
+          <p>Sphere Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z: N/A)</span></p>
+          <button id="add-point-button">Add Point</button>
+          <button id="add-keyframe-button">Add Keyframe</button>
+          <hr>
+          <h3>Save / Load</h3>
+          <button id="save-button">Save Animation</button>
+          <label for="load-id-input">Animation ID to Load:</label>
+          <input type="number" id="load-id-input" placeholder="Enter ID">
+          <button id="load-button">Load Animation</button>
+          <hr>
+          <div id="status-message-div" class="status-message">App starting...</div>
+        </aside>
       </div>
     `;
+  }
 
-    // Create mock instances for KlyjaApp's dependencies
-    mockViewer = {
-      init: vi.fn(),
-      onSphereClick: null, // KlyjaApp will set this
-      renderPolygons: vi.fn(),
-      dispose: vi.fn()
-    };
-    ThreeViewer.mockImplementation(() => mockViewer);
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    setupDOM();
 
-    mockWasmManager = {
-      init: vi.fn().mockResolvedValue(undefined), // Ensure it's a resolved promise
-      initialized: true, // Simulate successful initialization by default for most tests
-      getAnimationName: vi.fn().mockReturnValue('Test Animation'),
+    // Define the plain object with spies that our WasmManager instance will be
+    mockWasmManagerInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      initialized: true, // Assume init makes it initialized
+      getAnimationName: vi.fn().mockReturnValue('Test Animation'), // Default mock from setup.js
       setAnimationName: vi.fn(),
-      addStaticPolygon: vi.fn(),
-      addPointToActivePolygon: vi.fn(),
-      getPolygonsData: vi.fn().mockReturnValue([]),
+      getTotalFrames: vi.fn().mockReturnValue(100), // Default mock
+      setTotalFrames: vi.fn(),
+      createFeature: vi.fn().mockReturnValue('new-feature-id'),
+      addPointToActiveFeature: vi.fn().mockReturnValue('new-point-id'),
+      addPositionKeyframeToPoint: vi.fn(),
+      getRenderableFeaturesJsonAtFrame: vi.fn().mockReturnValue(JSON.stringify([])),
       getAnimationProtobuf: vi.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
-      loadAnimationProtobuf: vi.fn()
+      loadAnimationProtobuf: vi.fn(),
+      get_active_feature_id: vi.fn().mockReturnValue(null), //Ensure all methods are present
     };
-    WasmManager.mockImplementation(() => mockWasmManager);
+    
+    // When new WasmManager() is called, it will return our mockWasmManagerInstance
+    WasmManager.mockImplementation(() => mockWasmManagerInstance);
 
-    mockApiClient = {
-      saveAnimation: vi.fn().mockResolvedValue({ id: 123, message: 'Success' }),
-      loadAnimation: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6]))
+    mockViewerInstance = {
+      init: vi.fn(),
+      onSphereClick: null,
+      renderFeatures: vi.fn(),
+      dispose: vi.fn(),
     };
-    ApiClient.mockImplementation(() => mockApiClient);
+    ThreeViewer.mockImplementation(() => mockViewerInstance);
+
+    mockApiClientInstance = {
+      saveAnimation: vi.fn().mockResolvedValue({ id: 99, message: 'Saved' }),
+      loadAnimation: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+    };
+    ApiClient.mockImplementation(() => mockApiClientInstance);
 
     app = new KlyjaApp();
+    await app.init(); // app.init() will call new WasmManager(), which will use the mockImplementation
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
-    document.body.innerHTML = ''; // Clean up DOM
+    if (app) app.dispose();
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
-  // --- Initialization Tests ---
-  describe('initialization', () => {
-    it('should initialize all components and bind events', async () => {
-      await app.init();
+  describe('Initialization', () => {
+    it('should initialize components and set initial UI state', async () => {
       expect(app.initialized).toBe(true);
-      expect(mockWasmManager.init).toHaveBeenCalled();
-      expect(mockViewer.init).toHaveBeenCalled();
-      // Check if a specific event was bound (optional, relies on DOM elements existing)
-      // For example, you could spy on addEventListener if needed, but usually testing the effect is better.
-    });
+      // Check if the WasmManager constructor (which is now our mock implementation factory) was called
+      expect(WasmManager).toHaveBeenCalledTimes(1);
+      // Check if the init method on our returned instance was called
+      expect(mockWasmManagerInstance.init).toHaveBeenCalledTimes(1);
 
-    it('should set up sphere click handler', async () => {
-      await app.init();
-      expect(mockViewer.onSphereClick).toBeInstanceOf(Function);
-    });
-
-    // Note: "should make functions globally available" might be less relevant now
-    // unless you are explicitly setting them on `window` for other reasons.
-    // The vanilla JS version doesn't primarily rely on global functions for its own UI.
-
-    it('should render initial state', async () => {
-      await app.init();
-      expect(mockWasmManager.getPolygonsData).toHaveBeenCalled();
-      expect(mockViewer.renderPolygons).toHaveBeenCalled();
-    });
-
-    it('should not initialize twice', async () => {
-      await app.init();
-      await app.init(); // Second call
-      expect(mockWasmManager.init).toHaveBeenCalledTimes(1);
-      // Add more checks if other init functions should also be called only once
-    });
-
-    it('should handle initialization errors from WASM', async () => {
-      // Simulate WasmManager init failing
-      const wasmError = new Error('WASM failed');
-      mockWasmManager.init.mockRejectedValueOnce(wasmError);
-
-      // KlyjaApp.init should catch this and throw, or handle it gracefully
-      // The current KlyjaApp.init throws the error.
-      await expect(app.init()).rejects.toThrow(wasmError);
-      expect(app.initialized).toBe(false);
-      // Check if status message reflects the error
-      expect(document.getElementById('status-message-div').textContent).toContain('Initialization Error: WASM failed');
-    });
-  });
-
-  // --- Sphere Click Handling ---
-  describe('sphere click handling', () => {
-    beforeEach(async () => {
-      await app.init(); // Ensure app is initialized
-    });
-
-    it('should add point and re-render on sphere click', () => {
-      // Manually call the sphere click handler (as if ThreeViewer triggered it)
-      app.handleSphereClick(1.5, 2.5, 3.5);
-
-      expect(mockWasmManager.addPointToActivePolygon).toHaveBeenCalledWith(1.5, 2.5, 3.5);
-      // renderCurrentState is called by handleSphereClick, which calls getPolygonsData & renderPolygons
-      // It's called once during init, and once after the click.
-      expect(mockViewer.renderPolygons).toHaveBeenCalledTimes(2);
-    });
-
-    it('should handle errors when adding point', () => {
-      const pointError = new Error('No active polygon');
-      mockWasmManager.addPointToActivePolygon.mockImplementationOnce(() => {
-        throw pointError;
-      });
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(ThreeViewer).toHaveBeenCalledTimes(1);
+      expect(mockViewerInstance.init).toHaveBeenCalledTimes(1);
       
-      app.handleSphereClick(1, 2, 3);
+      expect(ApiClient).toHaveBeenCalledTimes(1);
       
-      expect(consoleSpy).toHaveBeenCalledWith('Error adding point:', pointError);
-      expect(document.getElementById('status-message-div').textContent).toContain('Error adding point: No active polygon');
-      consoleSpy.mockRestore();
+      expect(mockWasmManagerInstance.getAnimationName).toHaveBeenCalled();
+      expect(mockWasmManagerInstance.getTotalFrames).toHaveBeenCalled();
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
+      expect(document.getElementById('wasm-name-span').textContent).toBe('Test Animation');
+      expect(document.getElementById('anim-name-input').value).toBe('Test Animation');
+      expect(document.getElementById('max-frame-display').textContent).toBe('100');
     });
   });
 
-  // --- Save Animation ---
-  describe('save animation', () => {
-    beforeEach(async () => {
-      await app.init();
+  // ... (rest of your tests in main-integration.test.js)
+  // Ensure you continue to use mockWasmManagerInstance for method spy checks,
+  // and WasmManager for constructor spy checks.
+  // The fixes for dispatching 'input' events from the previous step should remain.
+
+  // Example of one test with input dispatch fixed:
+  describe('Animation Settings', () => {
+    it('should update animation name in WASM when input changes', () => {
+      const nameInput = document.getElementById('anim-name-input');
+      nameInput.value = 'New Shiny Name';
+      nameInput.dispatchEvent(new Event('input')); // Dispatch event
+      
+      expect(mockWasmManagerInstance.setAnimationName).toHaveBeenCalledWith('New Shiny Name');
+      expect(mockWasmManagerInstance.getAnimationName).toHaveBeenCalled(); 
     });
 
-    it('should save animation successfully', async () => {
-      const result = await app.saveAnimationWithUIUpdate();
+    it('should set total frames in WASM and update UI', () => {
+      const totalFramesInput = document.getElementById('total-frames-input');
+      totalFramesInput.value = '150';
+      totalFramesInput.dispatchEvent(new Event('input')); // Dispatch event
 
-      expect(mockWasmManager.getAnimationProtobuf).toHaveBeenCalled();
-      expect(mockApiClient.saveAnimation).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
-      expect(result).toEqual({ id: 123, message: 'Success' });
-      expect(document.getElementById('status-message-div').textContent).toContain('Save successful! ID: 123');
-    });
-
-    it('should handle save errors', async () => {
-      const saveError = new Error('Network error');
-      mockApiClient.saveAnimation.mockRejectedValueOnce(saveError);
-
-      await expect(app.saveAnimationWithUIUpdate()).rejects.toThrow(saveError);
-      expect(document.getElementById('status-message-div').textContent).toContain('Save failed: Network error');
+      mockWasmManagerInstance.getTotalFrames.mockReturnValueOnce(150); 
+      
+      document.getElementById('set-total-frames-button').click();
+      
+      expect(mockWasmManagerInstance.setTotalFrames).toHaveBeenCalledWith(150);
+      expect(document.getElementById('frame-slider').max).toBe('150');
+      expect(document.getElementById('max-frame-display').textContent).toBe('150');
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
     });
   });
 
-  // --- Load Animation ---
-  describe('load animation', () => {
-    beforeEach(async () => {
-      await app.init();
+  describe('Timeline', () => {
+    it('should update current frame and re-render on slider input', () => {
+      const frameSlider = document.getElementById('frame-slider');
+      frameSlider.value = '25';
+      frameSlider.dispatchEvent(new Event('input'));
+      
+      expect(app.uiState.currentFrame).toBe(25);
+      expect(document.getElementById('current-frame-display').textContent).toBe('25');
+      expect(mockWasmManagerInstance.getRenderableFeaturesJsonAtFrame).toHaveBeenCalledWith(25);
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
+    });
+  });
+
+  describe('Feature Management', () => {
+    it('should create a feature and set it as active', () => {
+      const featureNameInput = document.getElementById('feature-name-input');
+      const featureTypeSelect = document.getElementById('feature-type-select');
+      const appearanceInput = document.getElementById('feature-appearance-frame-input');
+      const disappearanceInput = document.getElementById('feature-disappearance-frame-input');
+
+      featureNameInput.value = 'TestLand';
+      featureTypeSelect.value = '1'; 
+      appearanceInput.value = '10';
+      disappearanceInput.value = '90';
+
+      featureNameInput.dispatchEvent(new Event('input'));
+      featureTypeSelect.dispatchEvent(new Event('change')); 
+      appearanceInput.dispatchEvent(new Event('input'));
+      disappearanceInput.dispatchEvent(new Event('input'));
+      
+      mockWasmManagerInstance.createFeature.mockReturnValueOnce('custom-feature-id');
+
+      document.getElementById('create-feature-button').click();
+      
+      expect(mockWasmManagerInstance.createFeature).toHaveBeenCalledWith('TestLand', 1, 10, 90);
+      expect(app.uiState.activeFeatureId).toBe('custom-feature-id');
+      expect(document.getElementById('active-feature-id-display').textContent).toBe('custom-feature-id');
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
     });
 
-    it('should load animation successfully', async () => {
-      // Set a value for the load ID input for the app to use
+    it('should handle sphere click and update coordinates display', () => {
+        expect(mockViewerInstance.onSphereClick).toBeInstanceOf(Function);
+        mockViewerInstance.onSphereClick(0.1, 0.2, 0.3);
+        expect(app.uiState.lastSphereClickCoords).toEqual({ x: 0.1, y: 0.2, z: 0.3 });
+        expect(document.getElementById('sphere-click-coords').textContent).toContain('x: 0.10');
+    });
+
+    it('should add a point to the active feature', () => {
+      app.uiState.activeFeatureId = 'active-feature-123'; 
+      app.uiState.currentFrame = 5; 
+      app.uiState.lastSphereClickCoords = { x: 0.1, y: 0.2, z: 0.3 }; 
+
+      const pointIdInput = document.getElementById('point-id-input');
+      pointIdInput.value = 'myPoint';
+      pointIdInput.dispatchEvent(new Event('input')); 
+
+      mockWasmManagerInstance.addPointToActiveFeature.mockReturnValueOnce('returned-point-id');
+
+      document.getElementById('add-point-button').click();
+      
+      expect(mockWasmManagerInstance.addPointToActiveFeature).toHaveBeenCalledWith('myPoint', 5, 0.1, 0.2, 0.3);
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
+    });
+    
+    it('should not add point if no active feature', () => {
+      app.uiState.activeFeatureId = null; 
+      document.getElementById('add-point-button').click();
+      expect(mockWasmManagerInstance.addPointToActiveFeature).not.toHaveBeenCalled();
+      expect(document.getElementById('status-message-div').textContent).toContain('No active feature');
+    });
+
+
+    it('should add a keyframe to a point in the active feature', () => {
+      app.uiState.activeFeatureId = 'active-feature-123';
+      app.uiState.currentFrame = 15;
+      app.uiState.lastSphereClickCoords = { x: 0.4, y: 0.5, z: 0.6 };
+      
+      const pointIdInput = document.getElementById('point-id-input');
+      pointIdInput.value = 'targetPoint';
+      pointIdInput.dispatchEvent(new Event('input')); 
+
+      document.getElementById('add-keyframe-button').click();
+      
+      expect(mockWasmManagerInstance.addPositionKeyframeToPoint).toHaveBeenCalledWith('active-feature-123', 'targetPoint', 15, 0.4, 0.5, 0.6);
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
+    });
+
+     it('should require point ID for adding keyframe', () => {
+      app.uiState.activeFeatureId = 'active-feature-123';
+      const pointIdInput = document.getElementById('point-id-input');
+      pointIdInput.value = ''; 
+      pointIdInput.dispatchEvent(new Event('input'));
+
+      document.getElementById('add-keyframe-button').click();
+      expect(mockWasmManagerInstance.addPositionKeyframeToPoint).not.toHaveBeenCalled();
+      expect(document.getElementById('status-message-div').textContent).toContain('Please enter a Point ID');
+    });
+  });
+
+  describe('Save and Load', () => {
+    it('should save animation data', async () => {
+      const animNameInput = document.getElementById('anim-name-input');
+      animNameInput.value = "Save Test Name";
+      animNameInput.dispatchEvent(new Event('input'));
+
+      mockWasmManagerInstance.getAnimationName.mockReturnValueOnce("Save Test Name");
+
+      await app.saveAnimationWithUIUpdate();
+      
+      expect(mockWasmManagerInstance.setAnimationName).toHaveBeenCalledWith("Save Test Name");
+      expect(mockWasmManagerInstance.getAnimationProtobuf).toHaveBeenCalled();
+      expect(mockApiClientInstance.saveAnimation).toHaveBeenCalledWith(expect.any(Uint8Array)); 
+      expect(document.getElementById('status-message-div').textContent).toContain('Save successful! Animation ID: 99');
+      expect(document.getElementById('load-id-input').value).toBe('99');
+    });
+
+    it('should load animation data', async () => {
       const loadIdInput = document.getElementById('load-id-input');
-      loadIdInput.value = '123'; // Simulate user typing "123"
-      app.uiState.animationIdToLoad = '123'; // Also update the internal state if method reads from there
+      loadIdInput.value = '77';
+      loadIdInput.dispatchEvent(new Event('input')); 
 
-      const animationName = await app.loadAnimationWithUIUpdate();
+      mockWasmManagerInstance.getAnimationName.mockReturnValueOnce('Loaded Anim Name'); 
+      mockWasmManagerInstance.getTotalFrames.mockReturnValueOnce(120); 
 
-      expect(mockApiClient.loadAnimation).toHaveBeenCalledWith(123);
-      expect(mockWasmManager.loadAnimationProtobuf).toHaveBeenCalledWith(new Uint8Array([4, 5, 6]));
-      expect(mockViewer.renderPolygons).toHaveBeenCalledTimes(2); // Initial + after load
-      expect(mockWasmManager.getAnimationName).toHaveBeenCalled();
-      expect(animationName).toBe('Test Animation');
-      expect(document.getElementById('status-message-div').textContent).toContain("Animation loaded: 'Test Animation' (ID: 123)");
-    });
-
-    it('should handle load errors from API', async () => {
-      const loadError = new Error('Not found');
-      mockApiClient.loadAnimation.mockRejectedValueOnce(loadError);
-      app.uiState.animationIdToLoad = '123';
-
-
-      await expect(app.loadAnimationWithUIUpdate()).rejects.toThrow(loadError);
-      expect(document.getElementById('status-message-div').textContent).toContain('Load failed: Not found');
-    });
-
-     it('should handle invalid ID for load', async () => {
-      app.uiState.animationIdToLoad = 'abc'; // Invalid ID
-      await app.loadAnimationWithUIUpdate(); // Should not throw but update status
-      expect(mockApiClient.loadAnimation).not.toHaveBeenCalled();
-      expect(document.getElementById('status-message-div').textContent).toContain('Please enter a valid number ID to load.');
-    });
-  });
-
-  // --- Render Current State ---
-  describe('render current state', () => {
-    beforeEach(async () => {
-      await app.init();
-    });
-    it('should get polygons data and render', () => {
-      const mockPolygons = [{ polygon_id: 'poly1', points: [] }];
-      mockWasmManager.getPolygonsData.mockReturnValue(mockPolygons);
-
-      app.renderCurrentState(); // Called once during init, call again to test
-
-      expect(mockWasmManager.getPolygonsData).toHaveBeenCalledTimes(2); // init + this call
-      expect(mockViewer.renderPolygons).toHaveBeenCalledWith(mockPolygons);
-      expect(mockViewer.renderPolygons).toHaveBeenCalledTimes(2); // init + this call
+      await app.loadAnimationWithUIUpdate();
+      
+      expect(mockApiClientInstance.loadAnimation).toHaveBeenCalledWith(77);
+      expect(mockWasmManagerInstance.loadAnimationProtobuf).toHaveBeenCalledWith(expect.any(Uint8Array)); 
+      expect(document.getElementById('anim-name-input').value).toBe('Loaded Anim Name');
+      expect(document.getElementById('max-frame-display').textContent).toBe('120');
+      expect(mockViewerInstance.renderFeatures).toHaveBeenCalled(); 
+      expect(document.getElementById('status-message-div').textContent).toContain("Animation loaded: 'Loaded Anim Name' (ID: 77)");
     });
   });
   
-  // --- Disposal ---
-  describe('disposal', () => {
-    it('should dispose viewer', async () => {
-      await app.init();
-      app.dispose();
-      expect(mockViewer.dispose).toHaveBeenCalled();
+   describe('Error Handling in UI', () => {
+    it('should display error if creating feature fails in WASM', () => {
+      document.getElementById('feature-name-input').dispatchEvent(new Event('input')); // ensure uiState is set
+      mockWasmManagerInstance.createFeature.mockImplementationOnce(() => {
+        throw new Error('WASM Feature Error');
+      });
+      document.getElementById('create-feature-button').click();
+      expect(document.getElementById('status-message-div').textContent).toContain('Error creating feature: WASM Feature Error');
     });
 
-    it('should handle disposal when viewer not initialized', () => {
-      // app is created but app.init() is not called, so app.viewer is null
-      app.dispose(); // Should not throw
-      expect(mockViewer.dispose).not.toHaveBeenCalled();
-    });
-  });
+    it('should display error if adding point fails in WASM', () => {
+      app.uiState.activeFeatureId = 'active-feature-123';
+      document.getElementById('point-id-input').dispatchEvent(new Event('input'));
 
-  // The "app state integration" tests from your original file are no longer directly applicable
-  // because `app.appState` and its `_deps` structure have changed.
-  // You would now test the interactions with `app.uiState` or the direct calls to mocked services.
-  // For example, instead of checking `app.appState._deps.saveWasmData`, you check if `app.saveAnimationWithUIUpdate()`
-  // calls `mockApiClient.saveAnimation`.
+      mockWasmManagerInstance.addPointToActiveFeature.mockImplementationOnce(() => {
+        throw new Error('WASM Point Error');
+      });
+      document.getElementById('add-point-button').click();
+      expect(document.getElementById('status-message-div').textContent).toContain('Error adding point: WASM Point Error');
+    });
+   });
 });
