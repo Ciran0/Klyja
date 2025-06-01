@@ -88,50 +88,84 @@ mod feature_animation_tests {
         // This test checks successful additions
         let mut geco = create_test_geco();
         let feature_id = geco.create_feature("Poly".to_string(), 1, 0, 50).unwrap(); // Active feature
-        let point_id = geco
+
+        // Add first point "p1" at frame 0
+        let p1_id = geco
             .add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
             .unwrap();
 
-        let feature = geco
+        // --- Assertions after adding p1 ---
+        let feature_after_p1 = geco
             .animation_state
             .features
             .iter()
             .find(|f| f.feature_id == feature_id)
             .unwrap();
-        assert_eq!(feature.point_animation_paths.len(), 1);
-        let path = feature.point_animation_paths.first().unwrap();
-        assert_eq!(path.point_id, point_id);
-        assert_eq!(path.keyframes.len(), 1);
-        let keyframe = path.keyframes.first().unwrap();
-        assert_eq!(keyframe.frame, 0);
-        let pos = keyframe.position.as_ref().unwrap();
-        assert!((pos.x - 1.0).abs() < 1e-6);
-        assert!((pos.y - 0.0).abs() < 1e-6);
-        assert!((pos.z.unwrap() - 0.0).abs() < 1e-6);
 
-        assert_eq!(feature.structure_snapshots.len(), 1);
-        let snapshot = feature.structure_snapshots.first().unwrap();
-        assert_eq!(snapshot.frame, 0);
-        assert_eq!(snapshot.ordered_point_ids, vec![point_id.clone()]);
+        // Check point paths
+        assert_eq!(feature_after_p1.point_animation_paths.len(), 1);
+        let path_p1 = feature_after_p1.point_animation_paths.first().unwrap();
+        assert_eq!(path_p1.point_id, p1_id);
+        assert_eq!(path_p1.keyframes.len(), 1);
+        let keyframe_p1 = path_p1.keyframes.first().unwrap();
+        assert_eq!(keyframe_p1.frame, 0);
+        let pos_p1 = keyframe_p1.position.as_ref().unwrap();
+        assert!((pos_p1.x - 1.0).abs() < 1e-6); // Assuming 1.0,0,0 is normalized to 1,0,0
+        assert!((pos_p1.y - 0.0).abs() < 1e-6);
+        assert!((pos_p1.z.unwrap_or_default() - 0.0).abs() < 1e-6);
 
-        let point_id2 = geco
+        // Check structure snapshots after p1
+        // Should have one snapshot at frame 0 (from create_feature, updated by add_point)
+        assert_eq!(feature_after_p1.structure_snapshots.len(), 1);
+        let snapshot_frame0_after_p1 = feature_after_p1
+            .structure_snapshots
+            .iter()
+            .find(|s| s.frame == 0)
+            .expect("Snapshot at frame 0 not found after adding p1");
+        assert_eq!(
+            snapshot_frame0_after_p1.ordered_point_ids,
+            vec![p1_id.clone()]
+        );
+
+        // Add second point "p2" at frame 5
+        let p2_id = geco
             .add_point_to_active_feature("p2".to_string(), 5, 0.0, 1.0, Some(0.0))
             .unwrap();
-        let feature_updated = geco
+
+        // --- Assertions after adding p2 ---
+        let feature_after_p2 = geco
             .animation_state
             .features
             .iter()
             .find(|f| f.feature_id == feature_id)
             .unwrap();
-        assert_eq!(feature_updated.point_animation_paths.len(), 2);
-        let snapshot_updated = feature_updated.structure_snapshots.first().unwrap();
+
+        // Check point paths
+        assert_eq!(feature_after_p2.point_animation_paths.len(), 2);
+
+        // Check structure snapshots after p2
+        // Should now have two snapshots: frame 0 with [p1], and frame 5 with [p1, p2]
+        assert_eq!(feature_after_p2.structure_snapshots.len(), 2);
+
+        // Verify snapshot at frame 0 remains unchanged regarding its points
+        let final_snapshot_frame0 = feature_after_p2
+            .structure_snapshots
+            .iter()
+            .find(|s| s.frame == 0)
+            .expect("Snapshot at frame 0 not found after adding p2");
+        assert_eq!(final_snapshot_frame0.ordered_point_ids, vec![p1_id.clone()]);
+
+        // Verify snapshot at frame 5 (this is what the original failing assertion likely intended to check)
+        let snapshot_frame5 = feature_after_p2
+            .structure_snapshots
+            .iter()
+            .find(|s| s.frame == 5)
+            .expect("Snapshot at frame 5 not found after adding p2");
         assert_eq!(
-            snapshot_updated.ordered_point_ids,
-            vec![point_id, point_id2]
+            snapshot_frame5.ordered_point_ids,
+            vec![p1_id.clone(), p2_id.clone()]
         );
     }
-
-    // test_add_point_no_active_feature MOVED TO wasm_tests.rs
     // test_add_point_duplicate_id_in_feature MOVED TO wasm_tests.rs
 
     #[test]
