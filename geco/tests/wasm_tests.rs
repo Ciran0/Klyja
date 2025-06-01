@@ -1,13 +1,10 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    use geco::Geco; // Assuming Geco is in crate root for wasm_tests too
-                    //use wasm_bindgen::JsValue;
+    use geco::Geco;
+    //    use wasm_bindgen::JsValue;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
-
-    // Helper to create a Geco instance for tests, if not already standard
-    // fn create_test_geco() -> Geco { Geco::new() } // Not needed if Geco::new() is simple
 
     #[wasm_bindgen_test]
     fn test_geco_initialization_and_name() {
@@ -31,18 +28,19 @@ mod wasm_tests {
     fn test_create_feature_and_set_active() {
         let mut geco = Geco::new();
         let feature_id1 = geco.create_feature("MyPoly".to_string(), 1, 0, 10).unwrap();
-        assert!(geco.active_feature_id.is_some());
-        assert_eq!(geco.active_feature_id.as_ref().unwrap(), &feature_id1);
+        // Use the new getter method
+        assert!(geco.get_active_feature_id().is_some());
+        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id1);
 
         let feature_id2 = geco.create_feature("MyLine".to_string(), 2, 5, 15).unwrap();
-        assert_eq!(geco.active_feature_id.as_ref().unwrap(), &feature_id2); // Should be last created
+        // Use the new getter method
+        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id2); // Should be last created
 
         let features_json = geco.get_renderable_features_json_at_frame(5);
         assert!(features_json.contains("MyPoly"));
         assert!(features_json.contains("MyLine"));
     }
 
-    // ---- Tests moved from lib_test.rs and adapted ----
     #[wasm_bindgen_test]
     fn test_create_feature_invalid_type_wasm() {
         let mut geco = Geco::new();
@@ -54,7 +52,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     fn test_add_point_no_active_feature_wasm() {
-        let mut geco = Geco::new(); // No feature created, so no active feature
+        let mut geco = Geco::new();
         let result = geco.add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0));
         assert!(result.is_err());
         let err_msg = result.unwrap_err().as_string().unwrap_or_default();
@@ -72,7 +70,6 @@ mod wasm_tests {
         let err_msg = result.unwrap_err().as_string().unwrap_or_default();
         assert!(err_msg.contains("already exists in feature"));
     }
-    // ---- End of moved tests ----
 
     #[wasm_bindgen_test]
     fn test_add_point_to_active_feature_wasm() {
@@ -86,7 +83,7 @@ mod wasm_tests {
 
         let features_json = geco.get_renderable_features_json_at_frame(0);
         assert!(features_json.contains("\"name\":\"TestFeat\""));
-        assert!(features_json.contains("\"x\":0.4364")); // Normalized x of (1,2,0.5)
+        assert!(features_json.contains("\"x\":0.4364"));
     }
 
     #[wasm_bindgen_test]

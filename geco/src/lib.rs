@@ -209,6 +209,11 @@ impl Geco {
         }
     }
 
+    #[wasm_bindgen(js_name = getActiveFeatureId)]
+    pub fn get_active_feature_id(&self) -> Option<String> {
+        self.active_feature_id.clone()
+    }
+
     pub fn set_total_frames(&mut self, total_frames: i32) {
         if total_frames > 0 {
             self.animation_state.total_frames = total_frames;
