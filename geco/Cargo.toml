@@ -13,7 +13,8 @@ prost = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1", features = ["v4", "wasm-bindgen"] }
-getrandom = { version = "0.2", features = ["js"] } # Explicitly enable "js" feature for wasm support
+getrandom = { version = "0.2", features = ["js"] }
+nalgebra = "0.33"
 
 # Optional: Add logging to the browser console from Rust/WASM
 # console_error_panic_hook = { version = "0.1", optional = true }
@@ -31,9 +32,9 @@ assert_matches = "1.5"     # For more readable assertions
 # For `wasm-pack build` or `wasm-pack build --dev`
 # The "-O" flag is for optimization. wasm-opt uses it by default for dev profile.
 # Add "--enable-bulk-memory" to it.
-wasm-opt = ["-O", "--enable-bulk-memory"]
+wasm-opt = ["-O", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-bulk-memory"]
 
 [package.metadata.wasm-pack.profile.release]
 # For `wasm-pack build --release`
 # Also add "--enable-bulk-memory" here.
-wasm-opt = ["-O", "--enable-bulk-memory"] # Or higher optimization like -O2, -O3, -Os, -Oz if desired for release
+wasm-opt = ["-O", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-bulk-memory"]

@@ -5,7 +5,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 export class ThreeViewer {
   constructor(containerId, options = {}) {
     this.containerId = containerId;
-    this.SPHERE_RADIUS = options.sphereRadius || 5;
+    // Log the incoming options and the calculated SPHERE_RADIUS
+    console.log("[ThreeViewer Constructor] Options received:", options);
+    this.SPHERE_RADIUS = options.sphereRadius === undefined ? 1 : options.sphereRadius; // More explicit check
+    console.log("[ThreeViewer Constructor] Effective SPHERE_RADIUS:", this.SPHERE_RADIUS);
     
     // Three.js objects
     this.scene = null;
@@ -48,7 +51,7 @@ export class ThreeViewer {
       0.1,
       1000
     );
-    this.camera.position.z = this.SPHERE_RADIUS * 2.5;
+    this.camera.position.z = this.SPHERE_RADIUS * 3.5;
   }
 
   setupRenderer(container) {
@@ -67,6 +70,7 @@ export class ThreeViewer {
   }
 
   setupSphere() {
+    console.log("[ThreeViewer setupSphere] Using SPHERE_RADIUS:", this.SPHERE_RADIUS);
     const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 64, 32);
     const sphereMaterial = new THREE.MeshStandardMaterial({
       color: 0x0077ff,
@@ -75,7 +79,12 @@ export class ThreeViewer {
       roughness: 0.7,
     });
     this.mainSphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+
+    this.mainSphereMesh.scale.set(1, 1, 1);
+
     this.scene.add(this.mainSphereMesh);
+
+    console.log("[ThreeViewer setupSphere] mainSphereMesh scale:", this.mainSphereMesh.scale);
   }
 
   setupControls() {
@@ -119,7 +128,10 @@ export class ThreeViewer {
       const intersects = raycaster.intersectObject(this.mainSphereMesh);
 
       if (intersects.length > 0 && this.onSphereClick) {
-        const point = intersects[0].point;
+        const point = intersects[0].point.clone();
+
+        point.normalize();
+
         this.onSphereClick(point.x, point.y, point.z);
       }
     });

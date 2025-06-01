@@ -158,7 +158,7 @@ export class KlyjaApp {
             this.bindUIEvents();   // Bind events after elements are cached and initial state synced
 
             this.apiClient = new ApiClient();
-            this.viewer = new ThreeViewer('viewer-container', { sphereRadius: 5 });
+            this.viewer = new ThreeViewer('viewer-container', { sphereRadius: 1 });
             this.viewer.init();
             this.viewer.onSphereClick = (x, y, z) => this.handleSphereClick(x, y, z);
             

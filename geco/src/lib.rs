@@ -12,6 +12,7 @@ use crate::protobuf_gen::{
     Feature, FeatureStructureSnapshot, FeatureType, MapAnimation, Point, PointAnimationPath,
     PositionKeyframe,
 };
+use nalgebra::Vector3;
 use serde::Serialize; // For JSON serialization
 use uuid::Uuid;
 use wasm_bindgen::prelude::*; // For generating IDs
@@ -80,11 +81,6 @@ pub(crate) fn interpolate_point_position(
         return None;
     }
 
-    // Sort keyframes by frame just to be safe, though they should be sorted on add
-    // For performance, ensure they are always sorted and remove this sort.
-    // let mut sorted_keyframes = path.keyframes.clone();
-    // sorted_keyframes.sort_by_key(|kf| kf.frame);
-    // let keyframes = &sorted_keyframes; // if cloning/sorting here
     let keyframes = &path.keyframes;
 
     // Find the two keyframes that bracket the current_frame
@@ -119,28 +115,72 @@ pub(crate) fn interpolate_point_position(
                 return nkf.position.clone();
             }
 
-            let p1 = pkf.position.as_ref()?;
-            let p2 = nkf.position.as_ref()?;
+            let p1_ref = pkf.position.as_ref()?;
+            let p2_ref = nkf.position.as_ref()?;
+
+            // Convert to nalgebra vectors. Assuming Z is always Some(f32) after normalization.
+            // If Point.z is still Option<f32>, use .unwrap_or(0.0) cautiously.
+            // It's better if points for SLERP are guaranteed to be fully 3D.
+            let p0_vec = Vector3::new(p1_ref.x, p1_ref.y, p1_ref.z.unwrap_or(0.0f32));
+            let p1_vec = Vector3::new(p2_ref.x, p2_ref.y, p2_ref.z.unwrap_or(0.0f32));
 
             let t_total = (nkf.frame - pkf.frame) as f32;
             let t_current = (current_frame - pkf.frame) as f32;
 
             if t_total == 0.0 {
-                // Avoid division by zero if somehow frames are same but points differ
-                return Some(p1.clone());
+                // Should be caught by earlier checks, but defensive
+                return pkf.position.clone();
             }
-            let factor = t_current / t_total;
+            let t = t_current / t_total;
 
-            let x = p1.x + (p2.x - p1.x) * factor;
-            let y = p1.y + (p2.y - p1.y) * factor;
+            // SLERP implementation
+            let omega = p0_vec.dot(&p1_vec).acos();
 
-            let z = match (p1.z, p2.z) {
-                (Some(z1), Some(z2)) => Some(z1 + (z2 - z1) * factor),
-                (Some(z1), None) => Some(z1), // Or handle as error, or interpolate to 0?
-                (None, Some(z2)) => Some(z2), // Or handle as error, or interpolate from 0?
-                (None, None) => None,
-            };
-            Some(Point { x, y, z })
+            // If angle is very small, use LERP and re-normalize to avoid division by sin(omega) ~ 0
+            if omega.abs() < 1e-6 {
+                // Threshold for small angle
+                let lerped_vec = p0_vec.lerp(&p1_vec, t);
+                // Re-normalize, as LERP doesn't guarantee unit length on sphere
+                let normalized_lerped_vec = lerped_vec.try_normalize(1e-6).unwrap_or(lerped_vec);
+                return Some(Point {
+                    x: normalized_lerped_vec.x,
+                    y: normalized_lerped_vec.y,
+                    z: Some(normalized_lerped_vec.z),
+                });
+            }
+
+            // If angle is close to PI, SLERP can also be tricky.
+            // For nearly opposite points, many great arcs exist.
+            // A common approach is to pick an arbitrary orthogonal vector if they are perfectly opposite.
+            // However, nalgebra's slerp handles this reasonably.
+
+            let sin_omega = omega.sin();
+            if sin_omega.abs() < 1e-6 {
+                // Should be caught by omega check
+                // If sin_omega is zero, means omega is 0 or PI.
+                // If omega is 0, handled above. If PI, any point on the great circle is valid.
+                // For simplicity, return p0 or p1 based on t.
+                return if t < 0.5 {
+                    pkf.position.clone()
+                } else {
+                    nkf.position.clone()
+                };
+            }
+
+            let s0 = ((1.0 - t) * omega).sin() / sin_omega;
+            let s1 = (t * omega).sin() / sin_omega;
+
+            let interpolated_vec = (p0_vec * s0) + (p1_vec * s1);
+
+            // The result of SLERP should already be normalized if inputs are normalized.
+            // No need to re-normalize typically, but can be done for robustness.
+            // let final_vec = interpolated_vec.try_normalize(1e-6).unwrap_or(interpolated_vec);
+
+            Some(Point {
+                x: interpolated_vec.x,
+                y: interpolated_vec.y,
+                z: Some(interpolated_vec.z), // Assuming Z should be Some for spherical points
+            })
         }
     }
 }
@@ -293,9 +333,25 @@ impl Geco {
             )));
         }
 
+        let z_val = z.unwrap_or(0.0);
+        let mut magnitude = (x * x + y * y + z_val * z_val).sqrt();
+
+        if magnitude == 0.0 {
+            console_log!("Warning: Attempted to add point at origin.Defaulting magnitude to 1");
+            magnitude = 1.0;
+        }
+
+        let norm_x = x / magnitude;
+        let norm_y = y / magnitude;
+        let norm_z = z_val / magnitude;
+
         let initial_keyframe = PositionKeyframe {
             frame: initial_frame,
-            position: Some(Point { x, y, z }),
+            position: Some(Point {
+                x: norm_x,
+                y: norm_y,
+                z: Some(norm_z),
+            }),
         };
 
         let point_path = PointAnimationPath {
@@ -354,10 +410,29 @@ impl Geco {
             .find(|pap| pap.point_id == point_id)
             .ok_or_else(|| JsValue::from_str("Point not found in feature"))?;
 
+        let z_val = z.unwrap_or(0.0);
+        let mut magnitude = (x * x + y * y + z_val * z_val).sqrt();
+
+        if magnitude == 0.0 {
+            console_log!(
+                "Warning: Attempted to add keyframe at origin. Defaulting magnitude to 1."
+            );
+            magnitude = 1.0; // Or return Err(...)
+        }
+
+        let norm_x = x / magnitude;
+        let norm_y = y / magnitude;
+        let norm_z = z_val / magnitude;
+
         let new_keyframe = PositionKeyframe {
             frame,
-            position: Some(Point { x, y, z }),
+            position: Some(Point {
+                x: norm_x,
+                y: norm_y,
+                z: Some(norm_z),
+            }),
         };
+
         point_path.keyframes.push(new_keyframe);
         // Keep keyframes sorted by frame number for easier interpolation
         point_path.keyframes.sort_by_key(|kf| kf.frame);
