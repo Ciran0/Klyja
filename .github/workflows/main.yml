@@ -52,6 +52,10 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          components: llvm-tools
+
+      - name : Install cargo-tarpaulin
+        run : cargo install cargo-tarpaulin --version 0.32.0
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh -s -- -y
@@ -82,13 +86,99 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Run Backend Tests
+      # --- Backend Testing and Coverage ---
+      - name: Run Backend Tests & Generate Coverage
         working-directory: ./backend
-        run: cargo test --verbose
+        run: |
+          # Using --engine Llvm can be more compatible in some CI/Docker environments
+          # Outputting JSON to a directory in the root target folder for easier access
+          # Tarpaulin runs the tests itself, so the previous `cargo test` for backend might be redundant
+          # Add --fail-under <percentage> to make tarpaulin itself fail, or check manually below
+          cargo tarpaulin --engine llvm --out json --output-dir ../target/coverage/backend -- --test-threads=1
 
-      - name: Run Geco (WASM) Rust Tests
+      - name: Check Backend Code Coverage
+        if: always()
+        run: |
+          echo "Checking backend code coverage..."
+          COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json"
+          # --- SET YOUR DESIRED MINIMUM BACKEND COVERAGE PERCENTAGE ---
+          MIN_COVERAGE_BACKEND=60 
+
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            echo "::error::Backend coverage report $COVERAGE_FILE not found!"
+            exit 1
+          fi
+
+          # Adjust jq path based on tarpaulin's JSON output. Common paths:
+          # '.percent_covered' (often top-level for line coverage)
+          # '.percentage' (another common top-level field)
+          # '.overall_coverage.lines.percent' (if nested)
+          # The ' // 0' provides a fallback if a key is not found, to help debug parsing.
+          COVERAGE_PCT=$(jq '.percent_covered // .percentage // .overall_coverage.lines.percent // 0' $COVERAGE_FILE)
+
+          # Check if parsing failed to find any of the common keys or returned 0 legitimately
+          if [ "$COVERAGE_PCT" == "0" ] || [ "$COVERAGE_PCT" == "null" ]; then
+            if ! jq '.percent_covered? // .percentage? // .overall_coverage.lines.percent?' $COVERAGE_FILE | grep -qv "null"; then
+               echo "::error::Could not extract a valid backend coverage percentage from $COVERAGE_FILE, or it was genuinely zero."
+               echo "File content for debugging:"
+               cat $COVERAGE_FILE
+               exit 1 # Fail if no valid percentage could be parsed
+            fi
+            # If it's genuinely 0, the threshold check below will handle it.
+          fi
+          
+          echo "Current backend line coverage: $COVERAGE_PCT%"
+          echo "Required minimum backend line coverage: $MIN_COVERAGE_BACKEND%"
+
+          IS_SUFFICIENT=$(awk -v current="$COVERAGE_PCT" -v min="$MIN_COVERAGE_BACKEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
+          if [ "$IS_SUFFICIENT" -eq 1 ]; then
+            echo "Backend code coverage meets the threshold."
+          else
+            echo "::error::Backend code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_BACKEND%)."
+            exit 1
+          fi
+
+      # --- Geco (WASM) Testing and Coverage ---
+      - name: Run Geco (WASM) Lib Tests & Generate Coverage
         working-directory: ./geco
-        run: cargo test --lib --verbose
+        run: |
+          # Use --lib for library crates
+          cargo tarpaulin --engine Llvm --out json --output-dir ../target/coverage/geco --lib -- --test-threads=1
+
+      - name: Check Geco (WASM) Code Coverage
+        if: always()
+        run: |
+          echo "Checking Geco (WASM) code coverage..."
+          COVERAGE_FILE="target/coverage/geco/tarpaulin-report.json"
+          # --- SET YOUR DESIRED MINIMUM GECO COVERAGE PERCENTAGE ---
+          MIN_COVERAGE_GECO=50
+
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            echo "::error::Geco coverage report $COVERAGE_FILE not found!"
+            exit 1
+          fi
+
+          COVERAGE_PCT=$(jq '.percent_covered // .percentage // .overall_coverage.lines.percent // 0' $COVERAGE_FILE)
+
+          if [ "$COVERAGE_PCT" == "0" ] || [ "$COVERAGE_PCT" == "null" ]; then
+            if ! jq '.percent_covered? // .percentage? // .overall_coverage.lines.percent?' $COVERAGE_FILE | grep -qv "null"; then
+               echo "::error::Could not extract a valid Geco coverage percentage from $COVERAGE_FILE, or it was genuinely zero."
+               echo "File content for debugging:"
+               cat $COVERAGE_FILE
+               exit 1
+            fi
+          fi
+
+          echo "Current Geco line coverage: $COVERAGE_PCT%"
+          echo "Required minimum Geco line coverage: $MIN_COVERAGE_GECO%"
+
+          IS_SUFFICIENT=$(awk -v current="$COVERAGE_PCT" -v min="$MIN_COVERAGE_GECO" 'BEGIN { print (current >= min) ? "1" : "0" }')
+          if [ "$IS_SUFFICIENT" -eq 1 ]; then
+            echo "Geco code coverage meets the threshold."
+          else
+            echo "::error::Geco code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
+            exit 1
+          fi
 
       - name: Run Geco (WASM) Browser Tests (Headless)
         working-directory: ./geco
