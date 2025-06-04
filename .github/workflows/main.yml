@@ -144,6 +144,12 @@ jobs:
             type=match,pattern=refs/heads/fix/(.*),group=1,value=fix-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/fix/') }}
             type=match,pattern=refs/heads/chore/(.*),group=1,value=chore-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/chore/') }}
 
+      - name: Debug Docker meta output
+        run: |
+          echo "Generated Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Generated Labels: ${{ steps.meta.outputs.labels }}"
+          echo "GitHub Ref: ${{ github.ref }}"
+            
       # Placeholder for Post-Build Testing/Verification Step
       # This step would typically run after your frontend assets are built (e.g., by `npm run build` or `vite build`)
       # and before the `docker build` command, or as a check within a multi-stage Dockerfile.
