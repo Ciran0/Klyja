@@ -13,12 +13,12 @@ on:
     paths-ignore:
       - '**.md'
   pull_request:
-    branches: # Consider which branches you want PRs to trigger this for. Often PRs target main/staging.
+    branches:
       - main
       - staging
-      # - 'feature/**' # If you want to run on PRs to feature branches themselves
-      # - 'fix/**'
-      # - 'chore/**'
+      - 'feature/**'
+      - 'fix/**'
+      - 'chore/**'
     paths-ignore:
       - '**.md'
 
@@ -144,24 +144,38 @@ jobs:
             type=match,pattern=refs/heads/fix/(.*),group=1,value=fix-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/fix/') }}
             type=match,pattern=refs/heads/chore/(.*),group=1,value=chore-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/chore/') }}
 
-      - name: Debug Docker meta output
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Node.js dependencies (frontend)
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend for production
+        working-directory: ./frontend
+        run: npm run build # This uses "vite build" as per your package.json
+
+      - name: Verify production build output
         run: |
-          echo "Generated Tags: ${{ steps.meta.outputs.tags }}"
-          echo "Generated Labels: ${{ steps.meta.outputs.labels }}"
-          echo "GitHub Ref: ${{ github.ref }}"
-            
-      # Placeholder for Post-Build Testing/Verification Step
-      # This step would typically run after your frontend assets are built (e.g., by `npm run build` or `vite build`)
-      # and before the `docker build` command, or as a check within a multi-stage Dockerfile.
-      # For example, if your Dockerfile builds the frontend assets:
-      # - name: Verify Production Build (Example - adjust to your actual build process)
-      #   if: ${{ always() }} # Ensure it runs even if previous optional steps are skipped
-      #   run: |
-      #     echo "Assuming frontend assets are built within the Docker image or in a previous step."
-      #     echo "If frontend is built outside Docker first, run verification on those assets:"
-      #     # Example: npm run build --prefix frontend
-      #     # Example: if find frontend/dist/assets -name "*geco-mock*" | grep -q .; then exit 1; fi
-      #     echo "Verification logic for built assets would go here."
+          echo "Checking for geco-mock.js in frontend/dist..."
+          if find frontend/dist -type f -name "*geco-mock*" -print -quit | grep -q .; then
+            echo "::error::geco-mock.js or related file found in frontend/dist directory!"
+            echo "Listing contents of frontend/dist for debugging:"
+            ls -R frontend/dist
+            exit 1
+          else
+            echo "geco-mock.js not found in frontend/dist. Check passed."
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
