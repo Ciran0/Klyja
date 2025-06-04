@@ -100,7 +100,46 @@ jobs:
 
       - name: Run Frontend Tests
         working-directory: ./frontend
-        run: npm test
+        run: npm run test:coverage
+
+      - name: Check Frontend Code Coverage
+        if: always() 
+        run: |
+          echo "Checking frontend code coverage..."
+          COVERAGE_FILE="frontend/coverage/coverage-summary.json"
+          # --- SET YOUR DESIRED MINIMUM COVERAGE PERCENTAGE BELOW ---
+          MIN_COVERAGE=70 # Example: 70% line coverage
+
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            echo "::error::Coverage report $COVERAGE_FILE not found!"
+            exit 1
+          fi
+
+          # Using jq to parse line coverage percentage. 
+          # This assumes the structure from Istanbul's JSON reporter used by Vitest ('json' reporter).
+          # '.total.lines.pct' is a common path for overall line coverage percentage.
+          LINE_COVERAGE_PCT=$(jq '.total.lines.pct' $COVERAGE_FILE)
+
+          if [ -z "$LINE_COVERAGE_PCT" ] || [ "$LINE_COVERAGE_PCT" == "null" ]; then
+            echo "::error::Could not extract line coverage percentage from $COVERAGE_FILE."
+            echo "File content for debugging:"
+            cat $COVERAGE_FILE
+            exit 1
+          fi
+
+          echo "Current frontend line coverage: $LINE_COVERAGE_PCT%"
+          echo "Required minimum frontend line coverage: $MIN_COVERAGE%"
+
+          # Use awk for floating point comparison
+          IS_SUFFICIENT=$(awk -v current="$LINE_COVERAGE_PCT" -v min="$MIN_COVERAGE" 'BEGIN { print (current >= min) ? "1" : "0" }')
+
+          if [ "$IS_SUFFICIENT" -eq 1 ]; then
+            echo "Frontend code coverage meets the threshold."
+          else
+            echo "::error::Frontend code coverage ($LINE_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE%)."
+            exit 1
+          fi
+  
 
   build-and-push-docker:
     name: Build Docker Image (Push for main/staging)
