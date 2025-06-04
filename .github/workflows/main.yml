@@ -200,3 +200,4 @@ jobs:
             # Optionally, fail the step if the hook doesn't return a success code
             # exit 1
           fi
+# test for triggering the pipeline
