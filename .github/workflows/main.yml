@@ -112,34 +112,64 @@ jobs:
         if: always()
         run: |
           echo "Checking backend code coverage..."
-          COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json" # Path is correct relative to root
-          MIN_COVERAGE_BACKEND=40 
+          COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json"
+          MIN_COVERAGE_BACKEND=40 # Your current minimum
+
           if [ ! -f "$COVERAGE_FILE" ]; then
             echo "::error::Backend coverage report $COVERAGE_FILE not found!"
             exit 1
           fi
 
-          echo "Full content of $COVERAGE_FILE:"
-          cat $COVERAGE_FILE
-          echo "------------"
+          echo "Full content of $COVERAGE_FILE (first 50 lines):"
+          head -n 50 "$COVERAGE_FILE" # Print first 50 lines to avoid overly long logs
+          echo "------------------------------------"
+          echo "Full content of $COVERAGE_FILE (last 10 lines):"
+          tail -n 10 "$COVERAGE_FILE" # Print last 10 lines to see the summary
+          echo "------------------------------------"
 
-          COVERAGE_PCT=$(jq -r '.coverage //0' $COVERAGE_FILE)
-          if [ "$COVERAGE_PCT" == "0" ] || [ "$COVERAGE_PCT" == "null" ]; then
-            if ! jq '.percent_covered? // .percentage? // .overall_coverage.lines.percent?' $COVERAGE_FILE | grep -qv "null"; then
-               echo "::error::Could not extract a valid backend coverage percentage from $COVERAGE_FILE, or it was genuinely zero."
-               echo "File content for debugging:"
-               cat $COVERAGE_FILE
-               exit 1
-            fi
+          # Attempt to extract the .coverage value
+          # Ensure jq completes successfully and the value is not 'null' or empty
+          RAW_COVERAGE_VALUE=$(jq -r '.coverage' "$COVERAGE_FILE")
+          JQ_EXIT_CODE=$?
+
+          echo "jq exit code for '.coverage': $JQ_EXIT_CODE"
+          echo "Raw value from jq '.coverage': [$RAW_COVERAGE_VALUE]"
+
+          if [ "$JQ_EXIT_CODE" -ne 0 ]; then
+            echo "::error::jq command failed to parse '.coverage' from $COVERAGE_FILE."
+            exit 1
           fi
+
+          if [ "$RAW_COVERAGE_VALUE" == "null" ] || [ -z "$RAW_COVERAGE_VALUE" ]; then
+            echo "::error::Field '.coverage' not found or was null in $COVERAGE_FILE."
+            # As a fallback, try to calculate from covered_lines and coverable_lines if they exist
+            TOTAL_COVERED=$(jq -r '.covered_lines // 0' "$COVERAGE_FILE")
+            TOTAL_COVERABLE=$(jq -r '.coverable_lines // 0' "$COVERAGE_FILE")
+            echo "Fallback: .covered_lines = $TOTAL_COVERED, .coverable_lines = $TOTAL_COVERABLE"
+            if [ "$TOTAL_COVERABLE" != "0" ] && [ "$TOTAL_COVERABLE" != "null" ] && [ ! -z "$TOTAL_COVERABLE" ]; then
+              COVERAGE_PCT=$(awk "BEGIN {printf \"%.2f\", ($TOTAL_COVERED / $TOTAL_COVERABLE) * 100}")
+              echo "Calculated fallback coverage: $COVERAGE_PCT%"
+            else
+              echo "::error::Cannot calculate fallback coverage, .coverable_lines is zero or missing."
+              exit 1
+            fi
+          else
+            COVERAGE_PCT="$RAW_COVERAGE_VALUE"
+          fi
+          
+          echo "Final COVERAGE_PCT to be used for comparison: [$COVERAGE_PCT]"
+
+          # Use bc for reliable floating point comparison
+          IS_BELOW_MIN=$(echo "$COVERAGE_PCT < $MIN_COVERAGE_BACKEND" | bc -l)
+          
           echo "Current backend line coverage: $COVERAGE_PCT%"
           echo "Required minimum backend line coverage: $MIN_COVERAGE_BACKEND%"
-          IS_SUFFICIENT=$(awk -v current="$COVERAGE_PCT" -v min="$MIN_COVERAGE_BACKEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$IS_SUFFICIENT" -eq 1 ]; then
-            echo "Backend code coverage meets the threshold."
-          else
+
+          if [ "$IS_BELOW_MIN" -eq 1 ]; then
             echo "::error::Backend code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_BACKEND%)."
             exit 1
+          else
+            echo "Backend code coverage meets the threshold."
           fi
 
       # --- Geco (WASM) Testing and Coverage ---
@@ -154,6 +184,28 @@ jobs:
         run: |
           echo "Listing contents of target/coverage/geco:"
           ls -alR target/coverage/geco || echo "Geco coverage directory 'target/coverage/geco' not found or empty."
+
+      - name: DEBUG Geco (WASM) Report Content
+        if: always()
+        run: |
+          echo "DEBUGGING GECO COVERAGE REPORT"
+          GECO_REPORT_FILE="target/coverage/geco/tarpaulin-report.json"
+
+          if [ ! -f "$GECO_REPORT_FILE" ]; then
+            echo "::error::GECO DEBUG: Report file $GECO_REPORT_FILE was NOT FOUND."
+            ls -alR target/coverage/geco || echo "target/coverage/geco directory listing failed or empty."
+            exit 1
+          else
+            echo "::notice::GECO DEBUG: Report file $GECO_REPORT_FILE FOUND. Displaying its content:"
+            cat "$GECO_REPORT_FILE"
+            echo
+            echo "---------------------------------------------"
+            echo "::notice::GECO DEBUG: End of Geco report content. Now checking for '.coverage' field with jq:"
+            # Try to extract just the .coverage field to see if it exists
+            jq -r '.coverage' "$GECO_REPORT_FILE" || echo "jq query for .coverage failed or field not found."
+            # You can choose to exit here to focus on this output, or let the workflow continue
+            # exit 1 
+          fi
 
       - name: Check Geco (WASM) Code Coverage
         if: always()
@@ -183,14 +235,6 @@ jobs:
             echo "::error::Geco code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
             exit 1
           fi
-
-      # --- Geco (WASM) Testing and Coverage ---
-      - name: Run Geco (WASM) Lib Tests & Generate Coverage
-        working-directory: ./geco
-        run: |
-          # Use --lib for library crates
-          mkdir -p ../target/coverage/geco
-          cargo tarpaulin --engine Llvm --out json --output-dir ../target/coverage/geco --lib -- --test-threads=1
 
       - name: List files in geco coverage directory
         run: |
