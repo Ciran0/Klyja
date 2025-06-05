@@ -52,8 +52,8 @@ jobs:
           toolchain: stable
           components: llvm-tools
 
-      - name : Install cargo-tarpaulin
-        run : cargo install cargo-tarpaulin --version 0.32.0
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --version 0.32.0
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh -s -- -y
@@ -74,7 +74,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "./backend -> backend/target, ./geco -> geco/target" # This cache config is fine
+          workspaces: "./backend -> backend/target, ./geco -> geco/target"
 
       - name: Cache Node.js dependencies (frontend)
         uses: actions/cache@v4
@@ -86,20 +86,15 @@ jobs:
 
       # --- Backend Testing and Coverage ---
       - name: Run Backend Tests & Generate Coverage
-        # REMOVED working-directory: ./backend - This step now runs from the repo root
         run: |
-          mkdir -p target/coverage/backend # Create directory relative to root
-          # Run tarpaulin for the 'backend' package from the workspace root
-          # Corrected --engine to Llvm
+          echo "Generating backend coverage report..."
+          mkdir -p target/coverage/backend
           cargo tarpaulin --packages backend --engine Llvm --out json --output-dir target/coverage/backend -- --test-threads=1
 
       - name: List files in backend coverage directory
         run: |
           echo "Listing contents of target/coverage/backend:"
           ls -alR target/coverage/backend || echo "Backend coverage directory 'target/coverage/backend' not found or empty."
-          # This second ls is less relevant now as tarpaulin runs from root
-          # echo "Listing contents of ../target/coverage/backend (from backend perspective, for verification):"
-          # ls -alR backend/../target/coverage/backend || echo "Backend coverage directory 'backend/../target/coverage/backend' not found or empty."
 
       - name: Upload backend coverage report for inspection
         uses: actions/upload-artifact@v4
@@ -107,77 +102,60 @@ jobs:
         with:
           name: backend-tarpaulin-report
           path: target/coverage/backend/tarpaulin-report.json
+          retention-days: 7
 
       - name: Check Backend Code Coverage
         if: always()
         run: |
           echo "Checking backend code coverage..."
-          COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json"
-          MIN_COVERAGE_BACKEND=40 # Your current minimum
+          BACKEND_COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json"
+          MIN_COVERAGE_BACKEND=40 
 
-          if [ ! -f "$COVERAGE_FILE" ]; then
-            echo "::error::Backend coverage report $COVERAGE_FILE not found!"
+          if [ ! -f "$BACKEND_COVERAGE_FILE" ]; then
+            echo "::error::Backend coverage report $BACKEND_COVERAGE_FILE not found!"
             exit 1
           fi
 
-          echo "Full content of $COVERAGE_FILE (first 50 lines):"
-          head -n 50 "$COVERAGE_FILE" # Print first 50 lines to avoid overly long logs
-          echo "------------------------------------"
-          echo "Full content of $COVERAGE_FILE (last 10 lines):"
-          tail -n 10 "$COVERAGE_FILE" # Print last 10 lines to see the summary
+          echo "Full content of $BACKEND_COVERAGE_FILE (for Backend Check):"
+          cat "$BACKEND_COVERAGE_FILE"
           echo "------------------------------------"
 
-          # Attempt to extract the .coverage value
-          # Ensure jq completes successfully and the value is not 'null' or empty
-          RAW_COVERAGE_VALUE=$(jq -r '.coverage' "$COVERAGE_FILE")
-          JQ_EXIT_CODE=$?
+          BACKEND_COVERAGE_PCT=$(jq -r '.coverage // 0' "$BACKEND_COVERAGE_FILE")
 
-          echo "jq exit code for '.coverage': $JQ_EXIT_CODE"
-          echo "Raw value from jq '.coverage': [$RAW_COVERAGE_VALUE]"
+          if [ "$BACKEND_COVERAGE_PCT" == "null" ] || [ -z "$BACKEND_COVERAGE_PCT" ]; then
+             echo "::error::jq command failed to extract a numeric coverage percentage from $BACKEND_COVERAGE_FILE. Result was '$BACKEND_COVERAGE_PCT'."
+             exit 1
+          fi
+          
+          BACKEND_IS_ZERO=$(echo "$BACKEND_COVERAGE_PCT == 0" | bc -l)
+          BACKEND_FIELDS_MISSING=0
+          if ! jq -e '.coverage' "$BACKEND_COVERAGE_FILE" > /dev/null; then
+              BACKEND_FIELDS_MISSING=1
+          fi
 
-          if [ "$JQ_EXIT_CODE" -ne 0 ]; then
-            echo "::error::jq command failed to parse '.coverage' from $COVERAGE_FILE."
+          if [ "$BACKEND_IS_ZERO" -eq 1 ] && [ "$BACKEND_FIELDS_MISSING" -eq 1 ]; then
+            echo "::error::Could not extract a valid backend coverage percentage (field '.coverage' not found in $BACKEND_COVERAGE_FILE), and it defaulted to 0."
             exit 1
-          fi
-
-          if [ "$RAW_COVERAGE_VALUE" == "null" ] || [ -z "$RAW_COVERAGE_VALUE" ]; then
-            echo "::error::Field '.coverage' not found or was null in $COVERAGE_FILE."
-            # As a fallback, try to calculate from covered_lines and coverable_lines if they exist
-            TOTAL_COVERED=$(jq -r '.covered_lines // 0' "$COVERAGE_FILE")
-            TOTAL_COVERABLE=$(jq -r '.coverable_lines // 0' "$COVERAGE_FILE")
-            echo "Fallback: .covered_lines = $TOTAL_COVERED, .coverable_lines = $TOTAL_COVERABLE"
-            if [ "$TOTAL_COVERABLE" != "0" ] && [ "$TOTAL_COVERABLE" != "null" ] && [ ! -z "$TOTAL_COVERABLE" ]; then
-              COVERAGE_PCT=$(awk "BEGIN {printf \"%.2f\", ($TOTAL_COVERED / $TOTAL_COVERABLE) * 100}")
-              echo "Calculated fallback coverage: $COVERAGE_PCT%"
-            else
-              echo "::error::Cannot calculate fallback coverage, .coverable_lines is zero or missing."
-              exit 1
-            fi
-          else
-            COVERAGE_PCT="$RAW_COVERAGE_VALUE"
+          elif [ "$BACKEND_IS_ZERO" -eq 1 ]; then
+            echo "::warning::Backend code coverage is genuinely 0%."
           fi
           
-          echo "Final COVERAGE_PCT to be used for comparison: [$COVERAGE_PCT]"
-
-          # Use bc for reliable floating point comparison
-          IS_BELOW_MIN=$(echo "$COVERAGE_PCT < $MIN_COVERAGE_BACKEND" | bc -l)
-          
-          echo "Current backend line coverage: $COVERAGE_PCT%"
+          echo "Current backend line coverage: $BACKEND_COVERAGE_PCT%"
           echo "Required minimum backend line coverage: $MIN_COVERAGE_BACKEND%"
 
-          if [ "$IS_BELOW_MIN" -eq 1 ]; then
-            echo "::error::Backend code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_BACKEND%)."
-            exit 1
-          else
+          BACKEND_IS_SUFFICIENT=$(awk -v current="$BACKEND_COVERAGE_PCT" -v min="$MIN_COVERAGE_BACKEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
+          if [ "$BACKEND_IS_SUFFICIENT" -eq 1 ]; then
             echo "Backend code coverage meets the threshold."
+          else
+            echo "::error::Backend code coverage ($BACKEND_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_BACKEND%)."
+            exit 1
           fi
 
       # --- Geco (WASM) Testing and Coverage ---
       - name: Run Geco (WASM) Lib Tests & Generate Coverage
-        # REMOVED working-directory: ./geco - This step now runs from the repo root
         run: |
-          mkdir -p target/coverage/geco # Create directory relative to root
-          # Run tarpaulin for the 'geco' package from the workspace root
+          echo "Generating Geco (WASM) coverage report..."
+          mkdir -p target/coverage/geco
           cargo tarpaulin --packages geco --engine Llvm --out json --output-dir target/coverage/geco --lib -- --test-threads=1
 
       - name: List files in geco coverage directory
@@ -185,94 +163,58 @@ jobs:
           echo "Listing contents of target/coverage/geco:"
           ls -alR target/coverage/geco || echo "Geco coverage directory 'target/coverage/geco' not found or empty."
 
-      - name: DEBUG Geco (WASM) Report Content
+      - name: Upload Geco coverage report for inspection
+        uses: actions/upload-artifact@v4
         if: always()
-        run: |
-          echo "DEBUGGING GECO COVERAGE REPORT"
-          GECO_REPORT_FILE="target/coverage/geco/tarpaulin-report.json"
-
-          if [ ! -f "$GECO_REPORT_FILE" ]; then
-            echo "::error::GECO DEBUG: Report file $GECO_REPORT_FILE was NOT FOUND."
-            ls -alR target/coverage/geco || echo "target/coverage/geco directory listing failed or empty."
-            exit 1
-          else
-            echo "::notice::GECO DEBUG: Report file $GECO_REPORT_FILE FOUND. Displaying its content:"
-            cat "$GECO_REPORT_FILE"
-            echo
-            echo "---------------------------------------------"
-            echo "::notice::GECO DEBUG: End of Geco report content. Now checking for '.coverage' field with jq:"
-            # Try to extract just the .coverage field to see if it exists
-            jq -r '.coverage' "$GECO_REPORT_FILE" || echo "jq query for .coverage failed or field not found."
-            # You can choose to exit here to focus on this output, or let the workflow continue
-            # exit 1 
-          fi
+        with:
+          name: geco-tarpaulin-report
+          path: target/coverage/geco/tarpaulin-report.json
+          retention-days: 7
 
       - name: Check Geco (WASM) Code Coverage
         if: always()
         run: |
           echo "Checking Geco (WASM) code coverage..."
-          COVERAGE_FILE="target/coverage/geco/tarpaulin-report.json" # Path is correct relative to root
-          MIN_COVERAGE_GECO=50
-          if [ ! -f "$COVERAGE_FILE" ]; then
-            echo "::error::Geco coverage report $COVERAGE_FILE not found!"
-            exit 1
-          fi
-          COVERAGE_PCT=$(jq -r '.coverage //0' $COVERAGE_FILE)
-          if [ "$COVERAGE_PCT" == "0" ] || [ "$COVERAGE_PCT" == "null" ]; then
-            if ! jq '.percent_covered? // .percentage? // .overall_coverage.lines.percent?' $COVERAGE_FILE | grep -qv "null"; then
-               echo "::error::Could not extract a valid Geco coverage percentage from $COVERAGE_FILE, or it was genuinely zero."
-               echo "File content for debugging:"
-               cat $COVERAGE_FILE
-               exit 1
-            fi
-          fi
-          echo "Current Geco line coverage: $COVERAGE_PCT%"
-          echo "Required minimum Geco line coverage: $MIN_COVERAGE_GECO%"
-          IS_SUFFICIENT=$(awk -v current="$COVERAGE_PCT" -v min="$MIN_COVERAGE_GECO" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$IS_SUFFICIENT" -eq 1 ]; then
-            echo "Geco code coverage meets the threshold."
-          else
-            echo "::error::Geco code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
-            exit 1
-          fi
-
-      - name: List files in geco coverage directory
-        run: |
-          echo "Listing contents of target/coverage/geco:"
-          ls -alR target/coverage/geco || echo "Geco coverage directory 'target/coverage/geco' not found or empty."
-
-      - name: Check Geco (WASM) Code Coverage
-        if: always()
-        run: |
-          echo "Checking Geco (WASM) code coverage..."
-          COVERAGE_FILE="target/coverage/geco/tarpaulin-report.json"
-          # --- SET YOUR DESIRED MINIMUM GECO COVERAGE PERCENTAGE ---
+          GECO_COVERAGE_FILE="target/coverage/geco/tarpaulin-report.json"
           MIN_COVERAGE_GECO=50
 
-          if [ ! -f "$COVERAGE_FILE" ]; then
-            echo "::error::Geco coverage report $COVERAGE_FILE not found!"
+          if [ ! -f "$GECO_COVERAGE_FILE" ]; then
+            echo "::error::Geco coverage report $GECO_COVERAGE_FILE not found!"
             exit 1
           fi
 
-          COVERAGE_PCT=$(jq '.percent_covered // .percentage // .overall_coverage.lines.percent // 0' $COVERAGE_FILE)
+          echo "Full content of $GECO_COVERAGE_FILE (for Geco Check):"
+          cat "$GECO_COVERAGE_FILE"
+          echo "------------------------------------"
+          
+          GECO_COVERAGE_PCT=$(jq -r '.coverage // 0' "$GECO_COVERAGE_FILE")
 
-          if [ "$COVERAGE_PCT" == "0" ] || [ "$COVERAGE_PCT" == "null" ]; then
-            if ! jq '.percent_covered? // .percentage? // .overall_coverage.lines.percent?' $COVERAGE_FILE | grep -qv "null"; then
-               echo "::error::Could not extract a valid Geco coverage percentage from $COVERAGE_FILE, or it was genuinely zero."
-               echo "File content for debugging:"
-               cat $COVERAGE_FILE
-               exit 1
-            fi
+          if [ "$GECO_COVERAGE_PCT" == "null" ] || [ -z "$GECO_COVERAGE_PCT" ]; then
+             echo "::error::jq command failed to extract a numeric coverage percentage from $GECO_COVERAGE_FILE. Result was '$GECO_COVERAGE_PCT'."
+             exit 1
+          fi
+          
+          GECO_IS_ZERO=$(echo "$GECO_COVERAGE_PCT == 0" | bc -l)
+          GECO_FIELDS_MISSING=0
+          if ! jq -e '.coverage' "$GECO_COVERAGE_FILE" > /dev/null; then
+              GECO_FIELDS_MISSING=1
           fi
 
-          echo "Current Geco line coverage: $COVERAGE_PCT%"
+          if [ "$GECO_IS_ZERO" -eq 1 ] && [ "$GECO_FIELDS_MISSING" -eq 1 ]; then
+            echo "::error::Could not extract a valid Geco coverage percentage (field '.coverage' not found in $GECO_COVERAGE_FILE), and it defaulted to 0."
+            exit 1
+          elif [ "$GECO_IS_ZERO" -eq 1 ]; then
+            echo "::warning::Geco code coverage is genuinely 0%."
+          fi
+          
+          echo "Current Geco line coverage: $GECO_COVERAGE_PCT%"
           echo "Required minimum Geco line coverage: $MIN_COVERAGE_GECO%"
 
-          IS_SUFFICIENT=$(awk -v current="$COVERAGE_PCT" -v min="$MIN_COVERAGE_GECO" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$IS_SUFFICIENT" -eq 1 ]; then
+          GECO_IS_SUFFICIENT=$(awk -v current="$GECO_COVERAGE_PCT" -v min="$MIN_COVERAGE_GECO" 'BEGIN { print (current >= min) ? "1" : "0" }')
+          if [ "$GECO_IS_SUFFICIENT" -eq 1 ]; then
             echo "Geco code coverage meets the threshold."
           else
-            echo "::error::Geco code coverage ($COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
+            echo "::error::Geco code coverage ($GECO_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
             exit 1
           fi
 
@@ -280,6 +222,7 @@ jobs:
         working-directory: ./geco
         run: wasm-pack test --headless --firefox
 
+      # --- Frontend Testing and Coverage ---
       - name: Install Frontend Dependencies
         working-directory: ./frontend
         run: npm ci
@@ -288,45 +231,56 @@ jobs:
         working-directory: ./frontend
         run: npm run test:coverage
 
+      - name: List files in frontend coverage directory # DEBUGGING STEP
+        run: |
+          echo "Listing contents of frontend/coverage:"
+          ls -alR frontend/coverage || echo "Frontend coverage directory 'frontend/coverage' not found or empty."
+          
+      - name: Upload frontend coverage report for inspection
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage-report
+          path: frontend/coverage # Upload the whole directory
+          retention-days: 7
+
       - name: Check Frontend Code Coverage
         if: always() 
         run: |
           echo "Checking frontend code coverage..."
-          COVERAGE_FILE="frontend/coverage/coverage-summary.json"
-          # --- SET YOUR DESIRED MINIMUM COVERAGE PERCENTAGE BELOW ---
-          MIN_COVERAGE=70 # Example: 70% line coverage
+          FRONTEND_COVERAGE_FILE="frontend/coverage/coverage-summary.json"
+          MIN_COVERAGE_FRONTEND=70
 
-          if [ ! -f "$COVERAGE_FILE" ]; then
-            echo "::error::Coverage report $COVERAGE_FILE not found!"
+          if [ ! -f "$FRONTEND_COVERAGE_FILE" ]; then
+            echo "::error::Frontend coverage report $FRONTEND_COVERAGE_FILE not found!"
             exit 1
           fi
 
-          # Using jq to parse line coverage percentage. 
-          # This assumes the structure from Istanbul's JSON reporter used by Vitest ('json' reporter).
-          # '.total.lines.pct' is a common path for overall line coverage percentage.
-          LINE_COVERAGE_PCT=$(jq '.total.lines.pct' $COVERAGE_FILE)
+          echo "Full content of $FRONTEND_COVERAGE_FILE (for Frontend Check):"
+          cat "$FRONTEND_COVERAGE_FILE"
+          echo "------------------------------------"
 
-          if [ -z "$LINE_COVERAGE_PCT" ] || [ "$LINE_COVERAGE_PCT" == "null" ]; then
-            echo "::error::Could not extract line coverage percentage from $COVERAGE_FILE."
-            echo "File content for debugging:"
-            cat $COVERAGE_FILE
-            exit 1
+          FRONTEND_LINE_COVERAGE_PCT=$(jq -r '.total.lines.pct // 0' "$FRONTEND_COVERAGE_FILE")
+
+          if [ "$FRONTEND_LINE_COVERAGE_PCT" == "null" ] || [ -z "$FRONTEND_LINE_COVERAGE_PCT" ]; then
+             echo "::error::jq command failed to extract a numeric coverage percentage from $FRONTEND_COVERAGE_FILE. Result was '$FRONTEND_LINE_COVERAGE_PCT'."
+             exit 1
           fi
 
-          echo "Current frontend line coverage: $LINE_COVERAGE_PCT%"
-          echo "Required minimum frontend line coverage: $MIN_COVERAGE%"
+          FRONTEND_IS_ZERO=$(echo "$FRONTEND_LINE_COVERAGE_PCT == 0" | bc -l)
+          # Add more specific check if needed for missing '.total.lines.pct'
+          
+          echo "Current frontend line coverage: $FRONTEND_LINE_COVERAGE_PCT%"
+          echo "Required minimum frontend line coverage: $MIN_COVERAGE_FRONTEND%"
 
-          # Use awk for floating point comparison
-          IS_SUFFICIENT=$(awk -v current="$LINE_COVERAGE_PCT" -v min="$MIN_COVERAGE" 'BEGIN { print (current >= min) ? "1" : "0" }')
-
-          if [ "$IS_SUFFICIENT" -eq 1 ]; then
+          FRONTEND_IS_SUFFICIENT=$(awk -v current="$FRONTEND_LINE_COVERAGE_PCT" -v min="$MIN_COVERAGE_FRONTEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
+          if [ "$FRONTEND_IS_SUFFICIENT" -eq 1 ]; then
             echo "Frontend code coverage meets the threshold."
           else
-            echo "::error::Frontend code coverage ($LINE_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE%)."
+            echo "::error::Frontend code coverage ($FRONTEND_LINE_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_FRONTEND%)."
             exit 1
           fi
   
-
   build-and-push-docker:
     name: Build Docker Image (Push for main/staging)
     runs-on: ubuntu-latest
@@ -358,13 +312,9 @@ jobs:
         with:
           images: ghcr.io/${{ steps.prep_owner.outputs.OWNER }}/klyja
           tags: |
-            # Specific tags for main and staging
             type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
-            # Add short commit SHA as a tag for all relevant branch pushes
             type=sha,prefix=,suffix=,event=branch
-            # 'latest' tag only for the main branch
             type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
-            # Specific tags for feature, fix, and chore branches if you decide to push them (controlled by 'push' flag below)
             type=match,pattern=refs/heads/feature/(.*),group=1,value=feat-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/feature/') }}
             type=match,pattern=refs/heads/fix/(.*),group=1,value=fix-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/fix/') }}
             type=match,pattern=refs/heads/chore/(.*),group=1,value=chore-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/chore/') }}
@@ -388,7 +338,7 @@ jobs:
 
       - name: Build frontend for production
         working-directory: ./frontend
-        run: npm run build # This uses "vite build" as per your package.json
+        run: npm run build
 
       - name: Verify production build output
         run: |
@@ -409,7 +359,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ steps.prep_owner.outputs.OWNER }}
+          username: ${{ steps.prep_owner.outputs.OWNER }} # Corrected to use prep_owner output
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
@@ -417,8 +367,6 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # Only PUSH images for main and staging branches
-          # For feature, fix, chore branches, the image will be built but not pushed
           push: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -432,7 +380,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     environment:
       name: staging
-      url: http://staging.klyja.com
+      url: http://staging.klyja.com # Note: This URL is just an example for the environment
     steps:
       - name: Trigger Render Deploy Hook
         run: |
@@ -445,4 +393,3 @@ jobs:
             # Optionally, fail the step if the hook doesn't return a success code
             # exit 1
           fi
-# test for triggering the pipeline
