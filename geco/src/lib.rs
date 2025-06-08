@@ -574,9 +574,11 @@ impl Geco {
                         p1.x,
                         p1.y,
                         p1.z.unwrap_or(0.0),
+                        1.0,
                         p2.x,
                         p2.y,
                         p2.z.unwrap_or(0.0),
+                        1.0,
                     ]);
                     segment_count += 1;
                 }
@@ -593,9 +595,11 @@ impl Geco {
                             last_point.x,
                             last_point.y,
                             last_point.z.unwrap_or(0.0),
+                            1.0,
                             first_point.x,
                             first_point.y,
                             first_point.z.unwrap_or(0.0),
+                            1.0,
                         ]);
                         segment_count += 1;
                     }
