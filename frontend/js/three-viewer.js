@@ -74,22 +74,36 @@ export class ThreeViewer {
     this.scene.add(directionalLight);
   }
 
-  setupSphere() {
-    console.log("[ThreeViewer setupSphere] Using SPHERE_RADIUS:", this.SPHERE_RADIUS);
-    const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 64, 32);
-    const sphereMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0077ff,
-      wireframe: true,
-      metalness: 0.2,
-      roughness: 0.7,
+
+setupSphere() {
+    const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 128, 64);
+
+    // --- Create the Data Texture ---
+    // We calculate a square texture size that's large enough to hold all our vertex data.
+    const texture_size = Math.ceil(Math.sqrt(MAX_LINE_SEGMENTS * 2));
+    const data = new Float32Array(texture_size * texture_size * 4); // *4 for RGBA channels
+
+    // Create the DataTexture object itself. This is our new data container.
+    this.lineTexture = new THREE.DataTexture(data, texture_size, texture_size, THREE.RGBAFormat, THREE.FloatType);
+    this.lineTexture.needsUpdate = true; // Mark it for upload to the GPU
+
+    const shaderMaterial = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        // The big 'u_lines' array is gone.
+        // We now pass the texture as a 'sampler2D' uniform.
+        u_line_texture: { value: this.lineTexture },
+        u_texture_size: { value: texture_size }, // Tell the shader the texture's dimensions.
+        u_line_count: { value: 0 },
+        u_sphere_radius: { value: this.SPHERE_RADIUS },
+        u_line_color: { value: new THREE.Color(0xffaa00) }, // Orange lines
+        u_line_thickness: { value: 0.005 }, // This is in radians on the sphere surface
+      },
     });
-    this.mainSphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
 
-    this.mainSphereMesh.scale.set(1, 1, 1);
-
+    this.mainSphereMesh = new THREE.Mesh(sphereGeometry, shaderMaterial);
     this.scene.add(this.mainSphereMesh);
-
-    console.log("[ThreeViewer setupSphere] mainSphereMesh scale:", this.mainSphereMesh.scale);
   }
 
   setupControls() {
@@ -142,25 +156,22 @@ export class ThreeViewer {
     });
   }
 
-  renderFeatures(vectorData) {
-    if (!vectorData || !this.mainSphereMesh) {
+renderFeatures(vectorData) {
+    if (!vectorData || !this.mainSphereMesh || !this.lineTexture) {
       return;
     }
     
-    // We no longer create new 3D objects. We just update the shader's data.
     const { vertex_data, segment_count } = vectorData;
 
-    // Update the uniform values on the material
+    // Update the simple count uniform
     this.mainSphereMesh.material.uniforms.u_line_count.value = segment_count;
     
-    // Copy the new vertex data into our existing uniform array buffer.
-    // This is much more efficient than creating a new array each time.
-    this.mainSphereMesh.material.uniforms.u_lines.value.set(vertex_data);
+    // Copy the vertex data from WASM directly into our texture's data buffer.
+    this.lineTexture.image.data.set(vertex_data);
     
-    // Tell Three.js that the uniform needs to be sent to the GPU again.
-    this.mainSphereMesh.material.uniforms.u_lines.needsUpdate = true;
+    // Tell Three.js that the texture's content has changed and needs to be re-uploaded to the GPU.
+    this.lineTexture.needsUpdate = true;
   }
-
 
   dispose() {
     

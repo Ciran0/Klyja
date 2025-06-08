@@ -29,3 +29,6 @@ assert_matches = "1.5"
 
 [profile.release]
 opt-level = "s" # Optimize for size in release builds
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["--enable-bulk-memory", "--enable-nontrapping-float-to-int", "-O"]
