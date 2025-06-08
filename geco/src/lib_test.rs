@@ -24,6 +24,7 @@ mod feature_animation_tests {
     use wasm_bindgen_test::*;
     wasm_bindgen_test_configure!(run_in_browser); // Or use a node environment
 
+    #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     fn test_get_renderable_line_segments_at_frame() {
         let mut geco = create_test_geco();
@@ -52,32 +53,32 @@ mod feature_animation_tests {
         );
 
         // Each segment has 2 points, each point has 3 coordinates (x,y,z)
-        // 4 segments * 2 points/segment * 3 floats/point = 24 floats
+        // 4 segments * 2 points/segment * 4 floats/point = 32 floats
         assert_eq!(
             result_data.vertex_data.len(),
-            24,
-            "Vertex data should have 24 floats"
+            32,
+            "Vertex data should have 32 floats"
         );
 
         // Check the coordinates of the first segment (p1 -> p2)
         // The points were normalized when added, so their coords remain (1,0,0), (0,1,0) etc.
         let expected_first_segment = vec![
-            1.0, 0.0, 0.0, // p1
-            0.0, 1.0, 0.0, // p2
+            1.0, 0.0, 0.0, 1.0, // p1
+            0.0, 1.0, 0.0, 1.0, // p2
         ];
         assert_eq!(
-            &result_data.vertex_data[0..6],
+            &result_data.vertex_data[0..8],
             &expected_first_segment,
             "First segment data is incorrect"
         );
 
         // Check the coordinates of the last segment (p4 -> p1)
         let expected_last_segment = vec![
-            0.0, -1.0, 0.0, // p4
-            1.0, 0.0, 0.0, // p1
+            0.0, -1.0, 0.0, 1.0, // p4
+            1.0, 0.0, 0.0, 1.0, // p1
         ];
         assert_eq!(
-            &result_data.vertex_data[18..24],
+            &result_data.vertex_data[24..32],
             &expected_last_segment,
             "Last segment data is incorrect"
         );
