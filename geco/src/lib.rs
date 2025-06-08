@@ -514,6 +514,8 @@ impl Geco {
         let mut vertex_data = Vec::<f32>::new();
         let mut segment_count: u32 = 0;
 
+        console_log!("--- New Frame {} ---", frame_number);
+
         for feature in &self.animation_state.features {
             // Skip features that are not visible at the current frame
             if frame_number < feature.appearance_frame || frame_number > feature.disappearance_frame
@@ -557,6 +559,17 @@ impl Geco {
                 for segment_points in interpolated_points.windows(2) {
                     let p1 = &segment_points[0];
                     let p2 = &segment_points[1];
+
+                    console_log!(
+                        "Adding segment: P1({:.2}, {:.2}, {:.2}) -> P2({:.2}, {:.2}, {:.2})",
+                        p1.x,
+                        p1.y,
+                        p1.z.unwrap_or(0.0),
+                        p2.x,
+                        p2.y,
+                        p2.z.unwrap_or(0.0)
+                    );
+
                     vertex_data.extend_from_slice(&[
                         p1.x,
                         p1.y,
@@ -570,10 +583,12 @@ impl Geco {
 
                 // If the feature is a closed polygon, add the closing segment
                 let feature_type = FeatureType::try_from(feature.r#type).unwrap_or_default();
+                console_log!("- checking feature type: {:?}", feature_type);
                 if feature_type == FeatureType::Polygon {
                     if let (Some(first_point), Some(last_point)) =
                         (interpolated_points.first(), interpolated_points.last())
                     {
+                        console_log!("Closing polygon...");
                         vertex_data.extend_from_slice(&[
                             last_point.x,
                             last_point.y,

@@ -99,6 +99,7 @@ setupSphere() {
         u_sphere_radius: { value: this.SPHERE_RADIUS },
         u_line_color: { value: new THREE.Color(0xffaa00) }, // Orange lines
         u_line_thickness: { value: 0.005 }, // This is in radians on the sphere surface
+        u_debug_mode: { value: false},
       },
     });
 

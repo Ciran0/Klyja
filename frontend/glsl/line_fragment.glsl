@@ -1,3 +1,4 @@
+varying vec2 v_uv;
 varying vec3 v_world_pos;
 varying vec3 v_normal;
 
@@ -5,6 +6,8 @@ varying vec3 v_normal;
 
 uniform sampler2D u_line_texture;
 uniform float u_texture_size;
+
+uniform bool u_debug_mode;
 
 uniform int u_line_count;
 uniform float u_sphere_radius;
@@ -17,34 +20,44 @@ vec3 get_vertex_from_texture(int index) {
     return texture2D(u_line_texture, vec2(u, v)).rgb;
 }
 
-// Final robust distance function
+// Final, correct, and simpler distance function
 float dist_to_great_arc_segment(vec3 p, vec3 a, vec3 b) {
-    // Find the normal of the great circle plane defined by a and b.
-    vec3 n = cross(a, b);
-
-    // If a and b are the same point, length(n) will be 0.
-    // This handles the "orange dot" case by just returning the distance to the point.
-    if (length(n) < 0.00001) {
+    // Handle the case where the segment is just a single point.
+    if (dot(a, b) > 0.99999) {
         return acos(dot(p, a));
     }
-    n = normalize(n);
 
-    // Project our pixel 'p' onto the great circle plane to find the closest point 'c'.
+    // Project pixel 'p' onto the great circle plane of the arc a-b to get point 'c'.
+    vec3 n = normalize(cross(a, b));
     vec3 c = normalize(p - n * dot(p, n));
 
-    // This is the robust check to see if 'c' is between 'a' and 'b'.
-    // It checks if the rotational order of (a,c) and (c,b) around the axis 'n' is positive.
-    // This confirms 'c' is on the shorter arc.
-    if (dot(cross(a, c), n) >= 0.0 && dot(cross(c, b), n) >= 0.0) {
-        // The pixel is in the middle section. Return the distance to the great circle.
+    // This is the correct check. A point 'c' is on the arc if its dot product
+    // with BOTH endpoints is greater than the dot product of the endpoints themselves.
+    // This is equivalent to saying angle(c,a) < angle(a,b) AND angle(c,b) < angle(a,b).
+    // We add a tiny epsilon for floating point stability at the edges.
+    float epsilon = 1e-5;
+    if (dot(c, a) >= dot(a, b) - epsilon && dot(c, b) >= dot(a, b) - epsilon) {
+        // Pixel is in the middle. Return distance to the infinite great circle.
         return abs(asin(dot(p, n)));
     }
 
-    // The pixel is in an "end-cap" region. Return distance to the closest endpoint.
+    // Pixel is in an end-cap. Return distance to the closest endpoint.
     return min(acos(dot(p, a)), acos(dot(p, b)));
 }
 
+
 void main() {
+
+    // --- DEBUG MODE ---
+    // If debug mode is active, just show us the raw data from the texture.
+    if (u_debug_mode) {
+        // We are reading from the data texture using the sphere's own UV coordinates.
+        // This will "unwrap" the data texture and paint it onto the sphere.
+        // We only care about the .rgb channels, as that's where we stored our (x,y,z) data.
+        gl_FragColor = vec4(texture2D(u_line_texture, v_uv).rgb, 1.0);
+        return; // Stop here.
+    }
+
     vec3 base_color = vec3(0.1, 0.3, 0.7);
     float min_dist = 1e6;
 
