@@ -8,12 +8,79 @@ mod feature_animation_tests {
         PositionKeyframe,
     };
     use crate::Geco;
-    use crate::RenderableFeatureJson;
+    use crate::{RenderableFeatureJson, WasmVectorData};
     use nalgebra::Vector3;
     // wasm_bindgen::JsValue is not typically used directly in #[test] unless also cfg(target_arch="wasm32")
 
     fn create_test_geco() -> Geco {
         Geco::new()
+    }
+
+    // Add this test function to the `mod feature_animation_tests { ... }` block in geco/src/lib_test.rs
+
+    // This test requires `serde_wasm_bindgen` in your [dev-dependencies]
+    // cargo add --dev serde-wasm-bindgen
+    // You also may need wasm-bindgen-test for deserializing JsValue in a test environment
+    use wasm_bindgen_test::*;
+    wasm_bindgen_test_configure!(run_in_browser); // Or use a node environment
+
+    #[wasm_bindgen_test]
+    fn test_get_renderable_line_segments_at_frame() {
+        let mut geco = create_test_geco();
+
+        // Create a square polygon feature (4 points)
+        geco.create_feature("Square".to_string(), 1, 0, 100)
+            .unwrap(); // 1 = Polygon
+        geco.add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
+            .unwrap(); // (1,0,0)
+        geco.add_point_to_active_feature("p2".to_string(), 0, 0.0, 1.0, Some(0.0))
+            .unwrap(); // (0,1,0)
+        geco.add_point_to_active_feature("p3".to_string(), 0, -1.0, 0.0, Some(0.0))
+            .unwrap(); // (-1,0,0)
+        geco.add_point_to_active_feature("p4".to_string(), 0, 0.0, -1.0, Some(0.0))
+            .unwrap(); // (0,-1,0)
+
+        // Call the new function
+        let result_js_value = geco.get_renderable_line_segments_at_frame(0).unwrap();
+        let result_data: WasmVectorData = serde_wasm_bindgen::from_value(result_js_value).unwrap();
+
+        // Assertions
+        // A square polygon has 4 closing segments
+        assert_eq!(
+            result_data.segment_count, 4,
+            "Should have 4 segments for a square polygon"
+        );
+
+        // Each segment has 2 points, each point has 3 coordinates (x,y,z)
+        // 4 segments * 2 points/segment * 3 floats/point = 24 floats
+        assert_eq!(
+            result_data.vertex_data.len(),
+            24,
+            "Vertex data should have 24 floats"
+        );
+
+        // Check the coordinates of the first segment (p1 -> p2)
+        // The points were normalized when added, so their coords remain (1,0,0), (0,1,0) etc.
+        let expected_first_segment = vec![
+            1.0, 0.0, 0.0, // p1
+            0.0, 1.0, 0.0, // p2
+        ];
+        assert_eq!(
+            &result_data.vertex_data[0..6],
+            &expected_first_segment,
+            "First segment data is incorrect"
+        );
+
+        // Check the coordinates of the last segment (p4 -> p1)
+        let expected_last_segment = vec![
+            0.0, -1.0, 0.0, // p4
+            1.0, 0.0, 0.0, // p1
+        ];
+        assert_eq!(
+            &result_data.vertex_data[18..24],
+            &expected_last_segment,
+            "Last segment data is incorrect"
+        );
     }
 
     #[test]

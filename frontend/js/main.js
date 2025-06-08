@@ -251,7 +251,7 @@ export class KlyjaApp {
         // console.log("Sphere clicked, coords stored:", this.uiState.lastSphereClickCoords);
     }
 
-    renderCurrentFrame() { // Renamed from renderCurrentState
+    renderCurrentFrame() {
         if (!this.viewer || !this.wasmManager || !this.wasmManager.initialized) {
             console.error("Cannot render - components not ready");
             this.updateStatus('Cannot render: components not fully initialized.');
@@ -260,9 +260,8 @@ export class KlyjaApp {
         const frame = this.uiState.currentFrame;
         // console.log(`Requesting render for frame: ${frame}`);
         try {
-            const featuresDataJson = this.wasmManager.getRenderableFeaturesJsonAtFrame(frame);
-            const featuresData = JSON.parse(featuresDataJson);
-            this.viewer.renderFeatures(featuresData); // Call new method in ThreeViewer
+            const vectorData = this.wasmManager.getRenderableLineSegmentsAtFrame(frame);
+            this.viewer.renderFeatures(vectorData); // Call new method in ThreeViewer
         } catch (e) {
             console.error("Error during renderCurrentFrame:", e);
             this.updateStatus(`Render error: ${e.message || e}`);

@@ -93,6 +93,18 @@ export class WasmManager {
     return this.gecoInstance.get_renderable_features_json_at_frame(frameNumber);
   }
 
+  getRenderableLineSegmentsAtFrame(frameNumber) {
+    this.ensureInitialized();
+    try {
+        // This returns a JsValue which will be automatically converted to a JS object
+        return this.gecoInstance.getRenderableLineSegmentsAtFrame(frameNumber);
+    } catch (e) {
+        console.error("Error getting line segment data:", e);
+        // Return a default empty state on error
+        return { vertex_data: [], segment_count: 0 };
+    }
+  }
+
   getAnimationProtobuf() {
     this.ensureInitialized();
     return this.gecoInstance.get_animation_protobuf();

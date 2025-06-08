@@ -1,6 +1,11 @@
 // frontend/js/three-viewer.js
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import vertexShader from '../glsl/line_vertex.glsl?raw';
+import fragmentShader from '../glsl/line_fragment.glsl?raw';
+
+//MUST MATCH THE #define IN THE FRAGMENT SHADER
+const MAX_LINE_SEGMENTS = 2048;
 
 export class ThreeViewer {
   constructor(containerId, options = {}) {
@@ -137,48 +142,27 @@ export class ThreeViewer {
     });
   }
 
-  clearVisualObjects() {
-    this.visualObjects.forEach(obj => this.scene.remove(obj));
-    this.visualObjects = [];
+  renderFeatures(vectorData) {
+    if (!vectorData || !this.mainSphereMesh) {
+      return;
+    }
+    
+    // We no longer create new 3D objects. We just update the shader's data.
+    const { vertex_data, segment_count } = vectorData;
+
+    // Update the uniform values on the material
+    this.mainSphereMesh.material.uniforms.u_line_count.value = segment_count;
+    
+    // Copy the new vertex data into our existing uniform array buffer.
+    // This is much more efficient than creating a new array each time.
+    this.mainSphereMesh.material.uniforms.u_lines.value.set(vertex_data);
+    
+    // Tell Three.js that the uniform needs to be sent to the GPU again.
+    this.mainSphereMesh.material.uniforms.u_lines.needsUpdate = true;
   }
 
-renderFeatures(featuresData) {
-    this.clearVisualObjects(); // Clear previously rendered objects
-
-    // Define materials (can be more sophisticated later)
-    const polylineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }); // Linewidth might not work on all systems with WebGLRenderer
-    const polygonLineMaterial = new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 1 });
-    // For filled polygons, you'd use MeshStandardMaterial or similar
-    // const polygonFillMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
-
-
-    featuresData.forEach(feature => {
-      if (!feature.points || feature.points.length < 1) {
-        return; // Nothing to render for this feature
-      }
-
-      const threePoints = feature.points.map(p => new THREE.Vector3(p.x, p.y, p.z || 0));
-
-      if (feature.feature_type === "Polyline") {
-        if (threePoints.length < 2) return; // Need at least 2 points for a line
-        const geometry = new THREE.BufferGeometry().setFromPoints(threePoints);
-        const line = new THREE.Line(geometry, polylineMaterial.clone()); // Clone material if changing properties per line
-        this.scene.add(line);
-        this.visualObjects.push(line);
-      } else if (feature.feature_type === "Polygon") {
-        if (threePoints.length < 2) return; // Need at least 2 for LineLoop, 3 for a visual polygon
-        
-        // Option 1: Draw as a line loop (outline)
-        const geometry = new THREE.BufferGeometry().setFromPoints(threePoints);
-        const lineLoop = new THREE.LineLoop(geometry, polygonLineMaterial.clone());
-        this.scene.add(lineLoop);
-        this.visualObjects.push(lineLoop);
-      }
-    });
-  }
 
   dispose() {
-    this.clearVisualObjects();
     
     if (this.renderer) {
       this.renderer.dispose();

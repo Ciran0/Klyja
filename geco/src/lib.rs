@@ -32,6 +32,12 @@ macro_rules! console_log {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct WasmVectorData {
+    pub vertex_data: Vec<f32>, // A flat array of [x1, y1, z1, x2, y2, z2, ...]
+    pub segment_count: u32,    // The number of line segments in the array
+}
+
+#[derive(Serialize, Deserialize)]
 struct SimplePointJson {
     x: f32,
     y: f32,
@@ -498,6 +504,97 @@ impl Geco {
                 "[]".to_string() // Return empty array string on error
             }
         }
+    }
+
+    #[wasm_bindgen(js_name = getRenderableLineSegmentsAtFrame)]
+    pub fn get_renderable_line_segments_at_frame(
+        &self,
+        frame_number: i32,
+    ) -> Result<JsValue, JsValue> {
+        let mut vertex_data = Vec::<f32>::new();
+        let mut segment_count: u32 = 0;
+
+        for feature in &self.animation_state.features {
+            // Skip features that are not visible at the current frame
+            if frame_number < feature.appearance_frame || frame_number > feature.disappearance_frame
+            {
+                continue;
+            }
+
+            // Find the most recent structural snapshot for the current frame
+            let current_snapshot = feature
+                .structure_snapshots
+                .iter()
+                .filter(|ss| ss.frame <= frame_number)
+                .max_by_key(|ss| ss.frame);
+
+            if let Some(snapshot) = current_snapshot {
+                if snapshot.ordered_point_ids.len() < 2 {
+                    continue; // Not enough points to form a line
+                }
+
+                // Interpolate all points for the current frame and collect them.
+                // Using a HashMap is efficient for looking up points by their ID.
+                let point_paths_map: std::collections::HashMap<_, _> = feature
+                    .point_animation_paths
+                    .iter()
+                    .map(|p| (p.point_id.clone(), p))
+                    .collect();
+
+                let interpolated_points: Vec<Point> = snapshot
+                    .ordered_point_ids
+                    .iter()
+                    .filter_map(|id| point_paths_map.get(id))
+                    .filter_map(|path| interpolate_point_position(path, frame_number))
+                    .collect();
+
+                if interpolated_points.len() < 2 {
+                    continue;
+                }
+
+                // Create line segments from the interpolated points.
+                // The `.windows(2)` iterator gives us overlapping pairs of points [P1, P2], then [P2, P3], etc.
+                for segment_points in interpolated_points.windows(2) {
+                    let p1 = &segment_points[0];
+                    let p2 = &segment_points[1];
+                    vertex_data.extend_from_slice(&[
+                        p1.x,
+                        p1.y,
+                        p1.z.unwrap_or(0.0),
+                        p2.x,
+                        p2.y,
+                        p2.z.unwrap_or(0.0),
+                    ]);
+                    segment_count += 1;
+                }
+
+                // If the feature is a closed polygon, add the closing segment
+                let feature_type = FeatureType::try_from(feature.r#type).unwrap_or_default();
+                if feature_type == FeatureType::Polygon {
+                    if let (Some(first_point), Some(last_point)) =
+                        (interpolated_points.first(), interpolated_points.last())
+                    {
+                        vertex_data.extend_from_slice(&[
+                            last_point.x,
+                            last_point.y,
+                            last_point.z.unwrap_or(0.0),
+                            first_point.x,
+                            first_point.y,
+                            first_point.z.unwrap_or(0.0),
+                        ]);
+                        segment_count += 1;
+                    }
+                }
+            }
+        }
+
+        let vector_data = WasmVectorData {
+            vertex_data,
+            segment_count,
+        };
+
+        // Serialize the result into a JsValue (JavaScript object)
+        serde_wasm_bindgen::to_value(&vector_data).map_err(|e| e.into())
     }
 }
 
