@@ -122,12 +122,6 @@ describe('WasmManager', () => {
     });
 
     // Data Retrieval
-    it('getRenderableFeaturesJsonAtFrame should call gecoInstance', () => {
-      const result = manager.getRenderableFeaturesJsonAtFrame(10);
-      expect(mockGecoInstance.get_renderable_features_json_at_frame).toHaveBeenCalledWith(10);
-      expect(result).toBe('[]');
-    });
-
     it('getAnimationProtobuf should call gecoInstance', () => {
       const result = manager.getAnimationProtobuf();
       expect(mockGecoInstance.get_animation_protobuf).toHaveBeenCalled();

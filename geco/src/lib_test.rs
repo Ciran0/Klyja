@@ -8,7 +8,7 @@ mod feature_animation_tests {
         PositionKeyframe,
     };
     use crate::Geco;
-    use crate::{RenderableFeatureJson, WasmVectorData};
+    use crate::WasmVectorData;
     use nalgebra::Vector3;
     // wasm_bindgen::JsValue is not typically used directly in #[test] unless also cfg(target_arch="wasm32")
 
@@ -374,122 +374,5 @@ mod feature_animation_tests {
             keyframes: vec![],
         };
         assert!(interpolate_point_position(&path, 5).is_none());
-    }
-
-    #[test]
-    fn test_get_renderable_features_json_at_frame_detailed() {
-        let mut geco = create_test_geco();
-        geco.set_total_frames(20);
-        let fid1 = geco.create_feature("Poly1".to_string(), 1, 0, 10).unwrap();
-        let p1_fid1 = geco
-            .add_point_to_active_feature("p1".to_string(), 0, 1.0, 0.0, Some(0.0))
-            .unwrap();
-        let p2_fid1 = geco
-            .add_point_to_active_feature("p2".to_string(), 0, 0.0, 1.0, Some(0.0))
-            .unwrap();
-        geco.add_position_keyframe_to_point(
-            fid1.clone(),
-            p1_fid1.clone(),
-            10,
-            -1.0,
-            0.0,
-            Some(0.0),
-        )
-        .unwrap();
-        geco.add_position_keyframe_to_point(fid1.clone(), p2_fid1.clone(), 5, 0.0, -1.0, Some(0.0))
-            .unwrap();
-        let fid2 = geco.create_feature("Line1".to_string(), 2, 5, 15).unwrap();
-        let p1_fid2 = geco
-            .add_point_to_active_feature("p1".to_string(), 5, 0.0, 0.0, Some(1.0))
-            .unwrap();
-        geco.add_position_keyframe_to_point(
-            fid2.clone(),
-            p1_fid2.clone(),
-            15,
-            0.0,
-            0.0,
-            Some(-1.0),
-        )
-        .unwrap();
-
-        let json_frame0 = geco.get_renderable_features_json_at_frame(0);
-        let data_frame0: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame0).unwrap();
-        assert_eq!(data_frame0.len(), 1);
-        assert_eq!(data_frame0[0].name, "Poly1");
-        assert_eq!(data_frame0[0].points.len(), 2);
-        assert!((data_frame0[0].points[0].x - 1.0).abs() < 1e-5);
-        assert!((data_frame0[0].points[1].y - 1.0).abs() < 1e-5);
-
-        let json_frame5 = geco.get_renderable_features_json_at_frame(5);
-        let data_frame5: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame5).unwrap();
-        assert_eq!(data_frame5.len(), 2);
-        let poly1_f5 = data_frame5.iter().find(|f| f.name == "Poly1").unwrap();
-        let line1_f5 = data_frame5.iter().find(|f| f.name == "Line1").unwrap();
-        assert_eq!(poly1_f5.points.len(), 2);
-        assert!((poly1_f5.points[0].x - 0.0).abs() < 1e-5);
-        assert!((poly1_f5.points[1].y - -1.0).abs() < 1e-5);
-        assert_eq!(line1_f5.points.len(), 1);
-        assert!((line1_f5.points[0].z.unwrap() - 1.0).abs() < 1e-5);
-
-        let json_frame12 = geco.get_renderable_features_json_at_frame(12);
-        let data_frame12: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame12).unwrap();
-        assert_eq!(data_frame12.len(), 1);
-        assert_eq!(data_frame12[0].name, "Line1");
-        assert!((data_frame12[0].points[0].z.unwrap() - -0.5877).abs() < 1e-4);
-
-        let json_frame20 = geco.get_renderable_features_json_at_frame(20);
-        assert_eq!(json_frame20, "[]");
-    }
-
-    #[test]
-    fn test_protobuf_serialization_deserialization_full_feature_cycle() {
-        let mut geco1 = create_test_geco();
-        geco1.set_animation_name("Full Cycle Test".to_string());
-        geco1.set_total_frames(50);
-        let fid = geco1
-            .create_feature("AnimatedFeature".to_string(), 1, 10, 40)
-            .unwrap();
-        let p1id = geco1
-            .add_point_to_active_feature("pt_a".to_string(), 10, 1.0, 0.0, Some(0.0))
-            .unwrap();
-        let p2id = geco1
-            .add_point_to_active_feature("pt_b".to_string(), 15, 0.0, 1.0, Some(0.0))
-            .unwrap();
-        geco1
-            .add_position_keyframe_to_point(fid.clone(), p1id.clone(), 20, 0.0, 0.0, Some(1.0))
-            .unwrap();
-        geco1
-            .add_position_keyframe_to_point(fid.clone(), p1id.clone(), 30, -1.0, 0.0, Some(0.0))
-            .unwrap();
-        geco1
-            .add_position_keyframe_to_point(fid.clone(), p2id.clone(), 25, 0.0, -1.0, Some(0.0))
-            .unwrap();
-
-        let bytes = geco1.get_animation_protobuf();
-        assert!(!bytes.is_empty());
-        let mut geco2 = Geco::new();
-        geco2.load_animation_protobuf(&bytes).unwrap();
-        assert_eq!(geco2.get_animation_name(), "Full Cycle Test");
-        assert_eq!(geco2.get_total_frames(), 50);
-        assert_eq!(geco2.animation_state.features.len(), 1);
-        let feature = geco2.animation_state.features.first().unwrap();
-        assert_eq!(feature.name, "AnimatedFeature");
-        assert_eq!(feature.appearance_frame, 10);
-        assert_eq!(feature.disappearance_frame, 40);
-        assert_eq!(feature.point_animation_paths.len(), 2);
-
-        let json_frame15 = geco2.get_renderable_features_json_at_frame(15);
-        let data_f15: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame15).unwrap();
-        assert_eq!(data_f15.len(), 1);
-        assert_eq!(data_f15[0].points.len(), 2);
-        assert!((data_f15[0].points[0].x - 0.7071).abs() < 1e-4);
-        assert!((data_f15[0].points[1].y - 1.0).abs() < 1e-4);
-
-        let json_frame35 = geco2.get_renderable_features_json_at_frame(35);
-        let data_f35: Vec<RenderableFeatureJson> = serde_json::from_str(&json_frame35).unwrap();
-        assert_eq!(data_f35.len(), 1);
-        assert_eq!(data_f35[0].points.len(), 2);
-        assert!((data_f35[0].points[0].x - -1.0).abs() < 1e-4);
-        assert!((data_f35[0].points[1].y - -1.0).abs() < 1e-4);
     }
 }

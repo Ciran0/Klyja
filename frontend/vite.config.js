@@ -47,6 +47,9 @@ export default defineConfig(({ command, mode }) => {
         reporter: ['text', 'json', 'html', 'json-summary'],
         exclude: ['**/node_modules/**', '**/tests/**', '**/*.config.js']
       }
+      alias: {
+        '/pkg/geco.js': path.resolve(__dirname, './tests/mocks/geco-mock.js'),
+      }
     }
     // Note: The test alias for geco-mock.js is removed from here
     // because the new, more general alias above handles the path.

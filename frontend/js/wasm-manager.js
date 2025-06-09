@@ -88,11 +88,6 @@ export class WasmManager {
   }
 
   // --- Data Retrieval ---
-  getRenderableFeaturesJsonAtFrame(frameNumber) {
-    this.ensureInitialized();
-    return this.gecoInstance.get_renderable_features_json_at_frame(frameNumber);
-  }
-
   getRenderableLineSegmentsAtFrame(frameNumber) {
     this.ensureInitialized();
     try {

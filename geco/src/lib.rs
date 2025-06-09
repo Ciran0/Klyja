@@ -37,32 +37,6 @@ pub struct WasmVectorData {
     pub segment_count: u32,    // The number of line segments in the array
 }
 
-#[derive(Serialize, Deserialize)]
-struct SimplePointJson {
-    x: f32,
-    y: f32,
-    z: Option<f32>,
-}
-
-impl From<&Point> for SimplePointJson {
-    fn from(p: &Point) -> Self {
-        SimplePointJson {
-            x: p.x,
-            y: p.y,
-            z: p.z,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct RenderableFeatureJson {
-    feature_id: String,
-    name: String,
-    feature_type: String,
-    points: Vec<SimplePointJson>,
-    properties: std::collections::HashMap<String, String>,
-}
-
 pub(crate) fn interpolate_point_position(
     path: &PointAnimationPath,
     current_frame: i32,
@@ -167,6 +141,22 @@ pub(crate) fn interpolate_point_position(
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TestFeatureState {
+    pub name: String,
+    pub feature_type: i32,
+    pub point_count: usize,
+    pub keyframe_count: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TestAnimationState {
+    pub name: String,
+    pub total_frames: i32,
+    pub active_feature_id: Option<String>,
+    pub features: Vec<TestFeatureState>,
+}
+
 #[wasm_bindgen]
 pub struct Geco {
     animation_state: MapAnimation,
@@ -187,6 +177,39 @@ impl Geco {
             },
             active_feature_id: None,
         }
+    }
+
+    //test only helper function
+    #[doc(hidden)]
+    #[wasm_bindgen(js_name = getStateForTesting)]
+    pub fn get_state_for_testing(&self) -> Result<JsValue, JsValue> {
+        let features_state: Vec<TestFeatureState> = self
+            .animation_state
+            .features
+            .iter()
+            .map(|f| {
+                let total_keyframes: usize = f
+                    .point_animation_paths
+                    .iter()
+                    .map(|p| p.keyframes.len())
+                    .sum();
+                TestFeatureState {
+                    name: f.name.clone(),
+                    feature_type: f.r#type,
+                    point_count: f.point_animation_paths.len(),
+                    keyframe_count: total_keyframes,
+                }
+            })
+            .collect();
+
+        let state = TestAnimationState {
+            name: self.animation_state.name.clone(),
+            total_frames: self.animation_state.total_frames,
+            active_feature_id: self.active_feature_id.clone(),
+            features: features_state,
+        };
+
+        serde_wasm_bindgen::to_value(&state).map_err(|e| e.into())
     }
 
     #[wasm_bindgen(js_name = getActiveFeatureId)]
@@ -441,69 +464,6 @@ impl Geco {
             frame
         );
         Ok(())
-    }
-
-    fn get_renderable_state_internal(&self, frame_number: i32) -> Vec<RenderableFeatureJson> {
-        let mut renderable_features = Vec::new();
-        for feature_proto in &self.animation_state.features {
-            if frame_number < feature_proto.appearance_frame
-                || frame_number > feature_proto.disappearance_frame
-            {
-                continue;
-            }
-            let current_structure_snapshot = feature_proto
-                .structure_snapshots
-                .iter()
-                .filter(|ss| ss.frame <= frame_number)
-                .max_by_key(|ss| ss.frame);
-
-            if let Some(snapshot) = current_structure_snapshot {
-                let mut current_points_for_feature = Vec::new();
-                for point_id_in_snapshot in &snapshot.ordered_point_ids {
-                    if let Some(point_path) = feature_proto
-                        .point_animation_paths
-                        .iter()
-                        .find(|pap| pap.point_id == *point_id_in_snapshot)
-                    {
-                        if let Some(interpolated_pos) =
-                            interpolate_point_position(point_path, frame_number)
-                        {
-                            current_points_for_feature
-                                .push(SimplePointJson::from(&interpolated_pos));
-                        }
-                    }
-                }
-                // Add feature if it has points OR if its defining snapshot is empty (meaning it's an empty feature)
-                if !current_points_for_feature.is_empty() || snapshot.ordered_point_ids.is_empty() {
-                    renderable_features.push(RenderableFeatureJson {
-                        feature_id: feature_proto.feature_id.clone(),
-                        name: feature_proto.name.clone(),
-                        feature_type: format!(
-                            "{:?}",
-                            FeatureType::try_from(feature_proto.r#type).unwrap_or_default()
-                        ),
-                        points: current_points_for_feature,
-                        properties: feature_proto.properties.clone(),
-                    });
-                }
-            }
-        }
-        renderable_features
-    }
-
-    pub fn get_renderable_features_json_at_frame(&self, frame_number: i32) -> String {
-        console_log!(
-            "Geco: get_renderable_features_json_at_frame for frame {}",
-            frame_number
-        );
-        let renderable_state = self.get_renderable_state_internal(frame_number);
-        match serde_json::to_string(&renderable_state) {
-            Ok(json) => json,
-            Err(e) => {
-                console_log!("Error serializing renderable state to JSON: {}", e);
-                "[]".to_string() // Return empty array string on error
-            }
-        }
     }
 
     #[wasm_bindgen(js_name = getRenderableLineSegmentsAtFrame)]

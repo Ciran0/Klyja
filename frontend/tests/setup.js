@@ -13,6 +13,12 @@ global.cancelAnimationFrame = id => clearTimeout(id);
 
 // --- THREE.js Mock Constructors ---
 
+const MockDataTexture = vi.fn(function(data) {
+  this.image = { data }; // Mock the necessary properties
+  this.needsUpdate = false;
+  this.isDataTexture = true;
+});
+
 // For classes we want to use "new" with AND spy on the constructor itself
 const MockVector3 = vi.fn(function(x = 0, y = 0, z = 0) {
   this.x = x;
@@ -95,6 +101,11 @@ vi.mock('three', () => ({
   WebGLRenderer: MockWebGLRenderer,
   Scene: MockScene,
   PerspectiveCamera: MockPerspectiveCamera,
+
+  DataTexture: MockDataTexture,
+  RGBAFormat: 'mock-rgba-format',
+  FloatType: 'mock-float-type',
+
   Vector2: vi.fn((x = 0, y = 0) => ({ x, y })), // Simple mock if not instantiated with "new"
   Vector3: MockVector3,
   Raycaster: vi.fn(() => ({
