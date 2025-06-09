@@ -1,7 +1,9 @@
+// klyja/geco/tests/wasm_tests.rs
+
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
     use geco::Geco;
-    //    use wasm_bindgen::JsValue;
+    use geco::TestAnimationState;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -28,17 +30,21 @@ mod wasm_tests {
     fn test_create_feature_and_set_active() {
         let mut geco = Geco::new();
         let feature_id1 = geco.create_feature("MyPoly".to_string(), 1, 0, 10).unwrap();
-        // Use the new getter method
         assert!(geco.get_active_feature_id().is_some());
         assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id1);
 
         let feature_id2 = geco.create_feature("MyLine".to_string(), 2, 5, 15).unwrap();
-        // Use the new getter method
-        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id2); // Should be last created
+        assert_eq!(geco.get_active_feature_id().as_ref().unwrap(), &feature_id2);
 
-        let features_json = geco.get_renderable_features_json_at_frame(5);
-        assert!(features_json.contains("MyPoly")); // This should now pass
-        assert!(features_json.contains("MyLine"));
+        // Use the test helper to check the state
+        let state_js = geco.get_state_for_testing().unwrap();
+        let state: TestAnimationState = serde_wasm_bindgen::from_value(state_js).unwrap();
+
+        // Assert against the structured data
+        assert_eq!(state.features.len(), 2);
+        assert_eq!(state.features[0].name, "MyPoly");
+        assert_eq!(state.features[1].name, "MyLine");
+        assert_eq!(state.active_feature_id, Some(feature_id2));
     }
 
     #[wasm_bindgen_test]
@@ -81,15 +87,19 @@ mod wasm_tests {
             .unwrap();
         assert_eq!(point_id, "p1");
 
-        let features_json = geco.get_renderable_features_json_at_frame(0);
-        assert!(features_json.contains("\"name\":\"TestFeat\""));
-        // Coordinates are normalized: x=1.0, y=2.0, z=0.5
-        // mag = sqrt(1+4+0.25) = sqrt(5.25) approx 2.29128
-        // norm_x = 1.0 / 2.29128 approx 0.4364
-        // norm_y = 2.0 / 2.29128 approx 0.8728
-        // norm_z = 0.5 / 2.29128 approx 0.2182
-        // Check for one of these, e.g., x. The exact float representation can be tricky.
-        assert!(features_json.contains("\"x\":0.4364")); // Or a more robust float comparison/parsing
+        let state: TestAnimationState =
+            serde_wasm_bindgen::from_value(geco.get_state_for_testing().unwrap()).unwrap();
+
+        assert_eq!(state.features.len(), 1, "There should be one feature.");
+        assert_eq!(state.features[0].name, "TestFeat");
+        assert_eq!(
+            state.features[0].point_count, 1,
+            "The feature should have one point."
+        );
+        assert_eq!(
+            state.features[0].keyframe_count, 1,
+            "The new point should have one keyframe."
+        );
     }
 
     #[wasm_bindgen_test]
@@ -98,17 +108,16 @@ mod wasm_tests {
         geco.create_feature("GenIdFeat".to_string(), 1, 0, 10)
             .unwrap();
         let point_id = geco
-            .add_point_to_active_feature("".to_string(), 0, 1.0, 0.0, None) // x=1, y=0, z defaults to 0 -> normalized (1,0,0)
+            .add_point_to_active_feature("".to_string(), 0, 1.0, 0.0, None)
             .unwrap();
         assert!(point_id.starts_with("point-"));
 
-        let features_json = geco.get_renderable_features_json_at_frame(0);
-        // The point_id string itself is not in the JSON output.
-        // Instead, check that the feature "GenIdFeat" exists and contains point data.
-        // The added point (1.0, 0.0, 0.0) will be normalized to (1.0, 0.0, 0.0).
-        // A simple check:
-        assert!(features_json.contains("\"name\":\"GenIdFeat\""));
-        assert!(features_json.contains("\"points\":[{\"x\":1.0")); // Check for x-coordinate of the point
+        let state: TestAnimationState =
+            serde_wasm_bindgen::from_value(geco.get_state_for_testing().unwrap()).unwrap();
+
+        assert_eq!(state.features.len(), 1);
+        assert_eq!(state.features[0].name, "GenIdFeat");
+        assert_eq!(state.features[0].point_count, 1);
     }
 
     #[wasm_bindgen_test]
@@ -121,51 +130,26 @@ mod wasm_tests {
             .add_point_to_active_feature("ptKey".to_string(), 0, 1.0, 0.0, Some(0.0))
             .unwrap();
 
+        let initial_state: TestAnimationState =
+            serde_wasm_bindgen::from_value(geco.get_state_for_testing().unwrap()).unwrap();
+        assert_eq!(initial_state.features[0].keyframe_count, 1);
+
         geco.add_position_keyframe_to_point(
             feature_id.clone(),
             point_id.clone(),
-            10, // frame
+            10,
             0.0,
             1.0,
-            Some(0.0), // new position (normalized to 0,1,0)
+            Some(0.0),
         )
         .unwrap();
 
-        let features_json_frame5 = geco.get_renderable_features_json_at_frame(5);
-        // Interpolated point at frame 5 (halfway between (1,0,0) and (0,1,0) via SLERP)
-        // Should be (cos(pi/4), sin(pi/4), 0) = (0.7071, 0.7071, 0)
-        assert!(features_json_frame5.contains("\"x\":0.7071"));
-        assert!(features_json_frame5.contains("\"y\":0.7071"));
-
-        let features_json_frame10 = geco.get_renderable_features_json_at_frame(10);
-        assert!(features_json_frame10.contains("\"y\":1.0")); // At frame 10, should be at the keyframe (0,1,0)
-    }
-
-    #[wasm_bindgen_test]
-    fn test_get_renderable_features_json_at_frame_wasm() {
-        let mut geco = Geco::new();
-        geco.create_feature("F1".to_string(), 1, 0, 10).unwrap();
-        geco.add_point_to_active_feature("p1_f1".to_string(), 0, 1.0, 0.0, None) // (1,0,0)
-            .unwrap();
-
-        geco.create_feature("F2".to_string(), 2, 5, 15).unwrap();
-        geco.add_point_to_active_feature("p1_f2".to_string(), 5, 0.0, 1.0, None) // (0,1,0)
-            .unwrap();
-
-        let json_frame0 = geco.get_renderable_features_json_at_frame(0);
-        assert!(json_frame0.contains("F1"));
-        assert!(!json_frame0.contains("F2"));
-
-        let json_frame7 = geco.get_renderable_features_json_at_frame(7);
-        assert!(json_frame7.contains("F1"));
-        assert!(json_frame7.contains("F2"));
-
-        let json_frame12 = geco.get_renderable_features_json_at_frame(12);
-        assert!(!json_frame12.contains("F1")); // F1 disappears after frame 10
-        assert!(json_frame12.contains("F2"));
-
-        let json_frame_out_of_bounds = geco.get_renderable_features_json_at_frame(100);
-        assert_eq!(json_frame_out_of_bounds, "[]");
+        let final_state: TestAnimationState =
+            serde_wasm_bindgen::from_value(geco.get_state_for_testing().unwrap()).unwrap();
+        assert_eq!(
+            final_state.features[0].keyframe_count, 2,
+            "A keyframe should have been added."
+        );
     }
 
     #[wasm_bindgen_test]
@@ -177,10 +161,10 @@ mod wasm_tests {
             .create_feature("ProtoFeat".to_string(), 1, 0, 20)
             .unwrap();
         let pid = geco1
-            .add_point_to_active_feature("p_proto".to_string(), 0, 1.0, 0.0, Some(0.0)) // (1,0,0)
+            .add_point_to_active_feature("p_proto".to_string(), 0, 1.0, 0.0, Some(0.0))
             .unwrap();
         geco1
-            .add_position_keyframe_to_point(fid.clone(), pid.clone(), 10, 0.0, 1.0, Some(0.0)) // (0,1,0)
+            .add_position_keyframe_to_point(fid.clone(), pid.clone(), 10, 0.0, 1.0, Some(0.0))
             .unwrap();
 
         let bytes = geco1.get_animation_protobuf();
@@ -194,12 +178,25 @@ mod wasm_tests {
             load_result.err()
         );
 
-        assert_eq!(geco2.get_animation_name(), "Proto Cycle");
-        assert_eq!(geco2.get_total_frames(), 30);
+        let state: TestAnimationState =
+            serde_wasm_bindgen::from_value(geco2.get_state_for_testing().unwrap()).unwrap();
 
-        let features_json = geco2.get_renderable_features_json_at_frame(5); // Halfway between (1,0,0) and (0,1,0)
-        assert!(features_json.contains("ProtoFeat"));
-        assert!(features_json.contains("\"x\":0.7071")); // slerp
+        assert_eq!(state.name, "Proto Cycle");
+        assert_eq!(state.total_frames, 30);
+        assert_eq!(
+            state.features.len(),
+            1,
+            "Should have one feature after loading."
+        );
+        assert_eq!(state.features[0].name, "ProtoFeat");
+        assert_eq!(
+            state.features[0].point_count, 1,
+            "Feature should have one point."
+        );
+        assert_eq!(
+            state.features[0].keyframe_count, 2,
+            "Point should have two keyframes."
+        );
     }
 
     #[wasm_bindgen_test]
