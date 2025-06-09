@@ -46,7 +46,7 @@ export default defineConfig(({ command, mode }) => {
         provider: 'v8',
         reporter: ['text', 'json', 'html', 'json-summary'],
         exclude: ['**/node_modules/**', '**/tests/**', '**/*.config.js']
-      }
+      },
       alias: {
         '/pkg/geco.js': path.resolve(__dirname, './tests/mocks/geco-mock.js'),
       }
@@ -63,3 +63,4 @@ export default defineConfig(({ command, mode }) => {
 
   return config;
 });
+

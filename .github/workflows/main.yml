@@ -88,135 +88,13 @@ jobs:
       - name: Run Backend Tests & Generate Coverage
         run: |
           echo "Generating backend coverage report..."
-          mkdir -p target/coverage/backend
-          cargo tarpaulin --packages backend --engine Llvm --out json --output-dir target/coverage/backend -- --test-threads=1
-
-      - name: List files in backend coverage directory
-        run: |
-          echo "Listing contents of target/coverage/backend:"
-          ls -alR target/coverage/backend || echo "Backend coverage directory 'target/coverage/backend' not found or empty."
-
-      - name: Upload backend coverage report for inspection
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-tarpaulin-report
-          path: target/coverage/backend/tarpaulin-report.json
-          retention-days: 7
-
-      - name: Check Backend Code Coverage
-        if: always()
-        run: |
-          echo "Checking backend code coverage..."
-          BACKEND_COVERAGE_FILE="target/coverage/backend/tarpaulin-report.json"
-          MIN_COVERAGE_BACKEND=40 
-
-          if [ ! -f "$BACKEND_COVERAGE_FILE" ]; then
-            echo "::error::Backend coverage report $BACKEND_COVERAGE_FILE not found!"
-            exit 1
-          fi
-
-          echo "Full content of $BACKEND_COVERAGE_FILE (for Backend Check):"
-          cat "$BACKEND_COVERAGE_FILE"
-          echo "------------------------------------"
-
-          BACKEND_COVERAGE_PCT=$(jq -r '.coverage // 0' "$BACKEND_COVERAGE_FILE")
-
-          if [ "$BACKEND_COVERAGE_PCT" == "null" ] || [ -z "$BACKEND_COVERAGE_PCT" ]; then
-             echo "::error::jq command failed to extract a numeric coverage percentage from $BACKEND_COVERAGE_FILE. Result was '$BACKEND_COVERAGE_PCT'."
-             exit 1
-          fi
-          
-          BACKEND_IS_ZERO=$(echo "$BACKEND_COVERAGE_PCT == 0" | bc -l)
-          BACKEND_FIELDS_MISSING=0
-          if ! jq -e '.coverage' "$BACKEND_COVERAGE_FILE" > /dev/null; then
-              BACKEND_FIELDS_MISSING=1
-          fi
-
-          if [ "$BACKEND_IS_ZERO" -eq 1 ] && [ "$BACKEND_FIELDS_MISSING" -eq 1 ]; then
-            echo "::error::Could not extract a valid backend coverage percentage (field '.coverage' not found in $BACKEND_COVERAGE_FILE), and it defaulted to 0."
-            exit 1
-          elif [ "$BACKEND_IS_ZERO" -eq 1 ]; then
-            echo "::warning::Backend code coverage is genuinely 0%."
-          fi
-          
-          echo "Current backend line coverage: $BACKEND_COVERAGE_PCT%"
-          echo "Required minimum backend line coverage: $MIN_COVERAGE_BACKEND%"
-
-          BACKEND_IS_SUFFICIENT=$(awk -v current="$BACKEND_COVERAGE_PCT" -v min="$MIN_COVERAGE_BACKEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$BACKEND_IS_SUFFICIENT" -eq 1 ]; then
-            echo "Backend code coverage meets the threshold."
-          else
-            echo "::error::Backend code coverage ($BACKEND_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_BACKEND%)."
-            exit 1
-          fi
+          cargo tarpaulin --packages backend --engine Llvm --out Xml --output-dir target/coverage/backend -- --test-threads=1
 
       # --- Geco (WASM) Testing and Coverage ---
       - name: Run Geco (WASM) Lib Tests & Generate Coverage
         run: |
           echo "Generating Geco (WASM) coverage report..."
-          mkdir -p target/coverage/geco
-          cargo tarpaulin --packages geco --engine Llvm --out json --output-dir target/coverage/geco --lib -- --test-threads=1
-
-      - name: List files in geco coverage directory
-        run: |
-          echo "Listing contents of target/coverage/geco:"
-          ls -alR target/coverage/geco || echo "Geco coverage directory 'target/coverage/geco' not found or empty."
-
-      - name: Upload Geco coverage report for inspection
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: geco-tarpaulin-report
-          path: target/coverage/geco/tarpaulin-report.json
-          retention-days: 7
-
-      - name: Check Geco (WASM) Code Coverage
-        if: always()
-        run: |
-          echo "Checking Geco (WASM) code coverage..."
-          GECO_COVERAGE_FILE="target/coverage/geco/tarpaulin-report.json"
-          MIN_COVERAGE_GECO=50
-
-          if [ ! -f "$GECO_COVERAGE_FILE" ]; then
-            echo "::error::Geco coverage report $GECO_COVERAGE_FILE not found!"
-            exit 1
-          fi
-
-          echo "Full content of $GECO_COVERAGE_FILE (for Geco Check):"
-          cat "$GECO_COVERAGE_FILE"
-          echo "------------------------------------"
-          
-          GECO_COVERAGE_PCT=$(jq -r '.coverage // 0' "$GECO_COVERAGE_FILE")
-
-          if [ "$GECO_COVERAGE_PCT" == "null" ] || [ -z "$GECO_COVERAGE_PCT" ]; then
-             echo "::error::jq command failed to extract a numeric coverage percentage from $GECO_COVERAGE_FILE. Result was '$GECO_COVERAGE_PCT'."
-             exit 1
-          fi
-          
-          GECO_IS_ZERO=$(echo "$GECO_COVERAGE_PCT == 0" | bc -l)
-          GECO_FIELDS_MISSING=0
-          if ! jq -e '.coverage' "$GECO_COVERAGE_FILE" > /dev/null; then
-              GECO_FIELDS_MISSING=1
-          fi
-
-          if [ "$GECO_IS_ZERO" -eq 1 ] && [ "$GECO_FIELDS_MISSING" -eq 1 ]; then
-            echo "::error::Could not extract a valid Geco coverage percentage (field '.coverage' not found in $GECO_COVERAGE_FILE), and it defaulted to 0."
-            exit 1
-          elif [ "$GECO_IS_ZERO" -eq 1 ]; then
-            echo "::warning::Geco code coverage is genuinely 0%."
-          fi
-          
-          echo "Current Geco line coverage: $GECO_COVERAGE_PCT%"
-          echo "Required minimum Geco line coverage: $MIN_COVERAGE_GECO%"
-
-          GECO_IS_SUFFICIENT=$(awk -v current="$GECO_COVERAGE_PCT" -v min="$MIN_COVERAGE_GECO" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$GECO_IS_SUFFICIENT" -eq 1 ]; then
-            echo "Geco code coverage meets the threshold."
-          else
-            echo "::error::Geco code coverage ($GECO_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_GECO%)."
-            exit 1
-          fi
+          cargo tarpaulin --packages geco --engine Llvm --out Xml --output-dir target/coverage/geco --lib -- --test-threads=1
 
       - name: Run Geco (WASM) Browser Tests (Headless)
         working-directory: ./geco
@@ -227,60 +105,22 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run Frontend Tests
+      - name: Run Frontend Tests & Generate Coverage
         working-directory: ./frontend
         run: npm run test:coverage
 
-      - name: List files in frontend coverage directory # DEBUGGING STEP
-        run: |
-          echo "Listing contents of frontend/coverage:"
-          ls -alR frontend/coverage || echo "Frontend coverage directory 'frontend/coverage' not found or empty."
-          
-      - name: Upload frontend coverage report for inspection
+      # --- Upload all reports as a single artifact ---
+      - name: Upload all coverage reports
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: frontend-coverage-report
-          path: frontend/coverage # Upload the whole directory
-          retention-days: 7
+          name: coverage-reports
+          path: |
+            target/coverage/backend/cobertura.xml
+            target/coverage/geco/cobertura.xml
+            frontend/coverage/cobertura-coverage.xml
+          retention-days: 1
 
-      - name: Check Frontend Code Coverage
-        if: always() 
-        run: |
-          echo "Checking frontend code coverage..."
-          FRONTEND_COVERAGE_FILE="frontend/coverage/coverage-summary.json"
-          MIN_COVERAGE_FRONTEND=70
-
-          if [ ! -f "$FRONTEND_COVERAGE_FILE" ]; then
-            echo "::error::Frontend coverage report $FRONTEND_COVERAGE_FILE not found!"
-            exit 1
-          fi
-
-          echo "Full content of $FRONTEND_COVERAGE_FILE (for Frontend Check):"
-          cat "$FRONTEND_COVERAGE_FILE"
-          echo "------------------------------------"
-
-          FRONTEND_LINE_COVERAGE_PCT=$(jq -r '.total.lines.pct // 0' "$FRONTEND_COVERAGE_FILE")
-
-          if [ "$FRONTEND_LINE_COVERAGE_PCT" == "null" ] || [ -z "$FRONTEND_LINE_COVERAGE_PCT" ]; then
-             echo "::error::jq command failed to extract a numeric coverage percentage from $FRONTEND_COVERAGE_FILE. Result was '$FRONTEND_LINE_COVERAGE_PCT'."
-             exit 1
-          fi
-
-          FRONTEND_IS_ZERO=$(echo "$FRONTEND_LINE_COVERAGE_PCT == 0" | bc -l)
-          # Add more specific check if needed for missing '.total.lines.pct'
-          
-          echo "Current frontend line coverage: $FRONTEND_LINE_COVERAGE_PCT%"
-          echo "Required minimum frontend line coverage: $MIN_COVERAGE_FRONTEND%"
-
-          FRONTEND_IS_SUFFICIENT=$(awk -v current="$FRONTEND_LINE_COVERAGE_PCT" -v min="$MIN_COVERAGE_FRONTEND" 'BEGIN { print (current >= min) ? "1" : "0" }')
-          if [ "$FRONTEND_IS_SUFFICIENT" -eq 1 ]; then
-            echo "Frontend code coverage meets the threshold."
-          else
-            echo "::error::Frontend code coverage ($FRONTEND_LINE_COVERAGE_PCT%) is below the required minimum ($MIN_COVERAGE_FRONTEND%)."
-            exit 1
-          fi
-  
+  # --- Docker job ---
   build-and-push-docker:
     name: Build Docker Image (Push for main/staging)
     runs-on: ubuntu-latest
@@ -295,17 +135,14 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Prepare image owner name
         id: prep_owner
         run: |
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "OWNER=$OWNER_LOWERCASE" >> $GITHUB_OUTPUT
-
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -318,12 +155,10 @@ jobs:
             type=match,pattern=refs/heads/feature/(.*),group=1,value=feat-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/feature/') }}
             type=match,pattern=refs/heads/fix/(.*),group=1,value=fix-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/fix/') }}
             type=match,pattern=refs/heads/chore/(.*),group=1,value=chore-{{value}},enable=${{ startsWith(github.ref, 'refs/heads/chore/') }}
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Cache Node.js dependencies (frontend)
         uses: actions/cache@v4
         with:
@@ -331,15 +166,12 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
-
       - name: Install Frontend Dependencies
         working-directory: ./frontend
         run: npm ci
-
       - name: Build frontend for production
         working-directory: ./frontend
         run: npm run build
-
       - name: Verify production build output
         run: |
           echo "Checking for geco-mock.js in frontend/dist..."
@@ -351,17 +183,14 @@ jobs:
           else
             echo "geco-mock.js not found in frontend/dist. Check passed."
           fi
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ steps.prep_owner.outputs.OWNER }} # Corrected to use prep_owner output
+          username: ${{ steps.prep_owner.outputs.OWNER }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -380,7 +209,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     environment:
       name: staging
-      url: http://staging.klyja.com # Note: This URL is just an example for the environment
+      url: http://staging.klyja.com
     steps:
       - name: Trigger Render Deploy Hook
         run: |
@@ -390,6 +219,24 @@ jobs:
             echo "Render deploy hook successfully triggered (HTTP $response_code)."
           else
             echo "!!! Render deploy hook failed (HTTP $response_code)."
-            # Optionally, fail the step if the hook doesn't return a success code
-            # exit 1
           fi
+
+  upload-coverage-to-codecov:
+    name: Upload Coverage to Codecov
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: .
+
+      - name: Upload reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
