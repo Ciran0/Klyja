@@ -7,7 +7,6 @@ const MockScene = THREE_MODULE.Scene;
 const MockPerspectiveCamera = THREE_MODULE.PerspectiveCamera;
 const MockWebGLRenderer = THREE_MODULE.WebGLRenderer;
 const MockMesh = THREE_MODULE.Mesh;
-const MockBufferGeometry = THREE_MODULE.BufferGeometry; 
 const MockVector3 = THREE_MODULE.Vector3; 
 
 
@@ -57,11 +56,6 @@ describe('ThreeViewer', () => {
   });
 
   describe('renderFeatures', () => {
-    // This test is no longer relevant as visual objects are not managed this way
-    it.skip('should clear previous visual objects before rendering new ones', () => {
-        // Test logic is deprecated by shader approach
-    });
-
     it('should update shader uniforms when rendering features', () => {
         const vectorData = {
             vertex_data: new Float32Array([1, 0, 0, 1, 0, 1, 0, 1]), // 1 segment

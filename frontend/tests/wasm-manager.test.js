@@ -11,7 +11,6 @@ vi.mock('/pkg/geco.js', () => {
     create_feature: vi.fn().mockReturnValue('feature-uuid-123'),
     add_point_to_active_feature: vi.fn().mockReturnValue('point-uuid-456'),
     add_position_keyframe_to_point: vi.fn(),
-    get_renderable_features_json_at_frame: vi.fn().mockReturnValue('[]'),
     getRenderableLineSegmentsAtFrame: vi.fn().mockReturnValue({ vertex_data: new Float32Array(), segment_count: 0 }),
     get_animation_protobuf: vi.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
     load_animation_protobuf: vi.fn(),
@@ -150,7 +149,7 @@ describe('WasmManager', () => {
       expect(() => uninitializedManager.createFeature('f',1,0,1)).toThrow('WASM Manager not initialized');
       expect(() => uninitializedManager.addPointToActiveFeature('p',0,0,0,0)).toThrow('WASM Manager not initialized');
       expect(() => uninitializedManager.addPositionKeyframeToPoint('f','p',0,0,0,0)).toThrow('WASM Manager not initialized');
-      expect(() => uninitializedManager.getRenderableFeaturesJsonAtFrame(0)).toThrow('WASM Manager not initialized');
+      expect(() => uninitializedManager.getRenderableLineSegmentsAtFrame(0)).toThrow('WASM Manager not initialized');
       expect(() => uninitializedManager.getAnimationProtobuf()).toThrow('WASM Manager not initialized');
       expect(() => uninitializedManager.loadAnimationProtobuf(new Uint8Array())).toThrow('WASM Manager not initialized');
     });

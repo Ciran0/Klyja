@@ -78,7 +78,7 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
       createFeature: vi.fn().mockReturnValue('new-feature-id'),
       addPointToActiveFeature: vi.fn().mockReturnValue('new-point-id'),
       addPositionKeyframeToPoint: vi.fn(),
-      getRenderableFeaturesJsonAtFrame: vi.fn().mockReturnValue(JSON.stringify([])),
+      getRenderableLineSegmentsAtFrame: vi.fn().mockReturnValue({ vertex_data: [], segment_count: 0 }),
       getAnimationProtobuf: vi.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
       loadAnimationProtobuf: vi.fn(),
       get_active_feature_id: vi.fn().mockReturnValue(null), //Ensure all methods are present
@@ -173,7 +173,7 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
       
       expect(app.uiState.currentFrame).toBe(25);
       expect(document.getElementById('current-frame-display').textContent).toBe('25');
-      expect(mockWasmManagerInstance.getRenderableFeaturesJsonAtFrame).toHaveBeenCalledWith(25);
+      expect(mockWasmManagerInstance.getRenderableLineSegmentsAtFrame).toHaveBeenCalledWith(25);
       expect(mockViewerInstance.renderFeatures).toHaveBeenCalled();
     });
   });
