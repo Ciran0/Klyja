@@ -14,12 +14,11 @@ global.cancelAnimationFrame = id => clearTimeout(id);
 // --- THREE.js Mock Constructors ---
 
 const MockDataTexture = vi.fn(function(data) {
-  this.image = { data }; // Mock the necessary properties
+  this.image = { data };
   this.needsUpdate = false;
   this.isDataTexture = true;
 });
 
-// For classes we want to use "new" with AND spy on the constructor itself
 const MockVector3 = vi.fn(function(x = 0, y = 0, z = 0) {
   this.x = x;
   this.y = y;
@@ -39,7 +38,7 @@ const MockVector3 = vi.fn(function(x = 0, y = 0, z = 0) {
 
 const MockBufferGeometry = vi.fn(function() {
   this.attributes = {};
-  this.setFromPoints = vi.fn(() => this); // Chainable
+  this.setFromPoints = vi.fn(() => this);
   this.dispose = vi.fn();
 });
 
@@ -60,8 +59,23 @@ const MockPerspectiveCamera = vi.fn(function() {
   this.getWorldDirection = vi.fn(() => new MockVector3(0,0,-1));
 });
 
+// This mock is now more realistic for what ThreeViewer expects
+const MockShaderMaterial = vi.fn(function() {
+    this.isShaderMaterial = true;
+    this.uniforms = {
+        u_line_texture: { value: null },
+        u_texture_size: { value: 0 },
+        u_line_count: { value: 0 },
+        u_sphere_radius: { value: 1 },
+        u_line_color: { value: null },
+        u_line_thickness: { value: 0.005 },
+        u_debug_mode: { value: false },
+    };
+});
+
+
 const MockMesh = vi.fn(function(geometry, material) {
-  this.geometry = geometry || { parameters: { radius: 0 } }; // Ensure geometry exists
+  this.geometry = geometry || { parameters: { radius: 0 } };
   this.material = material || {};
   this.position = new MockVector3();
   this.scale = new MockVector3(1,1,1);
@@ -105,15 +119,16 @@ vi.mock('three', () => ({
   DataTexture: MockDataTexture,
   RGBAFormat: 'mock-rgba-format',
   FloatType: 'mock-float-type',
+  ShaderMaterial: MockShaderMaterial, // Use the more detailed mock
 
-  Vector2: vi.fn((x = 0, y = 0) => ({ x, y })), // Simple mock if not instantiated with "new"
+  Vector2: vi.fn((x = 0, y = 0) => ({ x, y })),
   Vector3: MockVector3,
   Raycaster: vi.fn(() => ({
     setFromCamera: vi.fn(),
     intersectObject: vi.fn().mockReturnValue([])
   })),
   Mesh: MockMesh,
-  SphereGeometry: vi.fn((radius = 1) => ({ parameters: { radius } })), // Added default
+  SphereGeometry: vi.fn((radius = 1) => ({ parameters: { radius } })),
   MeshStandardMaterial: vi.fn(() => ({ dispose: vi.fn() })),
   MeshBasicMaterial: vi.fn(() => ({ dispose: vi.fn() })),
   LineBasicMaterial: vi.fn(() => ({ clone: vi.fn(function() { return this; }), dispose: vi.fn() })),

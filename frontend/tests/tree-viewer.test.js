@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ThreeViewer } from '../js/three-viewer.js';
-import * as THREE_MODULE from 'three'; // Import the entire module
+import * as THREE_MODULE from 'three'; 
 import { OrbitControls as OrbitControlsConstructorMock } from 'three/addons/controls/OrbitControls.js';
 
-// Get the mocked THREE classes from the imported module
 const MockScene = THREE_MODULE.Scene;
 const MockPerspectiveCamera = THREE_MODULE.PerspectiveCamera;
 const MockWebGLRenderer = THREE_MODULE.WebGLRenderer;
 const MockMesh = THREE_MODULE.Mesh;
-const MockLine = THREE_MODULE.Line;
-const MockLineLoop = THREE_MODULE.LineLoop;
 const MockBufferGeometry = THREE_MODULE.BufferGeometry; 
 const MockVector3 = THREE_MODULE.Vector3; 
 
@@ -47,7 +44,6 @@ describe('ThreeViewer', () => {
       expect(viewer.camera).toBeInstanceOf(MockPerspectiveCamera);
       expect(viewer.renderer).toBeInstanceOf(MockWebGLRenderer); 
       expect(viewer.mainSphereMesh).toBeInstanceOf(MockMesh);
-      // Ensure geometry is defined on the mock mesh instance before accessing parameters
       if (viewer.mainSphereMesh.geometry) {
         expect(viewer.mainSphereMesh.geometry.parameters.radius).toBe(1);
       } else {
@@ -55,109 +51,53 @@ describe('ThreeViewer', () => {
       }
     });
 
-    it('should set up OrbitControls', () => { // Removed async as import is at top
+    it('should set up OrbitControls', () => {
       expect(viewer.controls).toBeInstanceOf(OrbitControlsConstructorMock); 
     });
   });
 
   describe('renderFeatures', () => {
-    it('should clear previous visual objects before rendering new ones', () => {
-      const initialObject = { type: 'TestObject' };
-      // Ensure scene mock instance is used if add is an instance method
-      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
-      sceneInstance.add(initialObject);
-      viewer.visualObjects.push(initialObject);
-      const sceneRemoveSpy = vi.spyOn(sceneInstance, 'remove');
-      viewer.renderFeatures([]);
-      expect(sceneRemoveSpy).toHaveBeenCalledWith(initialObject);
-      expect(viewer.visualObjects).toHaveLength(0);
+    // This test is no longer relevant as visual objects are not managed this way
+    it.skip('should clear previous visual objects before rendering new ones', () => {
+        // Test logic is deprecated by shader approach
     });
 
-    it('should render Polyline features correctly', () => {
-      MockBufferGeometry.mockClear(); 
-      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
-      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
+    it('should update shader uniforms when rendering features', () => {
+        const vectorData = {
+            vertex_data: new Float32Array([1, 0, 0, 1, 0, 1, 0, 1]), // 1 segment
+            segment_count: 1
+        };
 
+        const textureSetSpy = vi.spyOn(viewer.lineTexture.image.data, 'set');
 
-      const featuresData = [
-        {
-          feature_id: 'line1',
-          name: 'Test Line',
-          feature_type: 'Polyline',
-          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 } ],
-          properties: {},
-        },
-      ];
-      viewer.renderFeatures(featuresData);
-
-      expect(viewer.visualObjects).toHaveLength(1);
-      const renderedObject = viewer.visualObjects[0];
-      expect(renderedObject).toBeInstanceOf(MockLine);
-      
-      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
-      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0]; 
-      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
-      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
-    });
-
-    it('should render Polygon features as LineLoop correctly', () => {
-      MockBufferGeometry.mockClear();
-      const sceneInstance = MockScene.mock.instances[0] || viewer.scene;
-      if (sceneInstance.add.mockClear) sceneInstance.add.mockClear();
-
-
-      const featuresData = [
-        {
-          feature_id: 'poly1',
-          name: 'Test Polygon',
-          feature_type: 'Polygon',
-          points: [ { x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 1 }, { x: 0, y: 1, z: 1 } ],
-          properties: {},
-        },
-      ];
-      viewer.renderFeatures(featuresData);
-
-      expect(viewer.visualObjects).toHaveLength(1);
-      const renderedObject = viewer.visualObjects[0];
-      expect(renderedObject).toBeInstanceOf(MockLineLoop);
-      expect(MockBufferGeometry).toHaveBeenCalledTimes(1); 
-      const bufferGeometryInstance = MockBufferGeometry.mock.instances[0];
-      expect(bufferGeometryInstance.setFromPoints).toHaveBeenCalled();
-      expect(sceneInstance.add).toHaveBeenCalledWith(renderedObject);
-    });
-
-    it('should not render Polyline with less than 2 points', () => {
-      const featuresData = [ { feature_type: 'Polyline', points: [{ x: 0, y: 0, z: 1 }] } ];
-      viewer.renderFeatures(featuresData);
-      expect(viewer.visualObjects).toHaveLength(0);
+        viewer.renderFeatures(vectorData);
+        
+        expect(viewer.mainSphereMesh.material.uniforms.u_line_count.value).toBe(1);
+        expect(textureSetSpy).toHaveBeenCalledWith(vectorData.vertex_data);
+        expect(viewer.lineTexture.needsUpdate).toBe(true);
     });
     
-    it('should not render Polygon with less than 2 points (for LineLoop)', () => {
-      const featuresData = [ { feature_type: 'Polygon', points: [{ x: 0, y: 0, z: 1 }] } ];
-      viewer.renderFeatures(featuresData);
-      expect(viewer.visualObjects).toHaveLength(0);
+    it('should handle empty vectorData gracefully', () => {
+        const vectorData = { vertex_data: new Float32Array(), segment_count: 0 };
+        
+        const textureSetSpy = vi.spyOn(viewer.lineTexture.image.data, 'set');
+
+        // It should not throw an error
+        expect(() => viewer.renderFeatures(vectorData)).not.toThrow();
+        
+        // Check that uniforms are updated correctly
+        expect(viewer.mainSphereMesh.material.uniforms.u_line_count.value).toBe(0);
+        expect(textureSetSpy).toHaveBeenCalledWith(vectorData.vertex_data);
     });
 
-    it('should handle features with no points', () => {
-      const featuresData = [{ feature_type: 'Polyline', points: [] }];
-      viewer.renderFeatures(featuresData);
-      expect(viewer.visualObjects).toHaveLength(0);
-    });
+    it('should handle null or undefined vectorData by doing nothing', () => {
+        const initialCount = viewer.mainSphereMesh.material.uniforms.u_line_count.value;
+        
+        viewer.renderFeatures(null);
+        expect(viewer.mainSphereMesh.material.uniforms.u_line_count.value).toBe(initialCount);
 
-    it('should handle features with undefined points array', () => {
-      const featuresData = [{ feature_type: 'Polyline' }];
-      viewer.renderFeatures(featuresData);
-      expect(viewer.visualObjects).toHaveLength(0);
-    });
-    
-    it('should use default z=0 if point.z is undefined', () => {
-       MockVector3.mockClear(); 
-       const featuresData = [ { feature_type: 'Polyline', points: [ { x: 0, y: 0 }, { x: 1, y: 1 } ] } ];
-       viewer.renderFeatures(featuresData);
-      
-       expect(MockVector3).toHaveBeenCalledWith(0,0,0);
-       expect(MockVector3).toHaveBeenCalledWith(1,1,0);
-       expect(viewer.visualObjects).toHaveLength(1);
+        viewer.renderFeatures(undefined);
+        expect(viewer.mainSphereMesh.material.uniforms.u_line_count.value).toBe(initialCount);
     });
   });
 
@@ -166,14 +106,18 @@ describe('ThreeViewer', () => {
       const mockOnSphereClick = vi.fn();
       viewer.onSphereClick = mockOnSphereClick;
 
-      viewer.renderer.domElement.getBoundingClientRect = vi.fn(() => ({
-        left: 0, top: 0, width: 800, height: 600,
-      }));
+      // Mock the raycaster logic inside the test since it's complex
+      const raycaster = {
+          setFromCamera: vi.fn(),
+          intersectObject: vi.fn().mockReturnValue([{ point: new MockVector3(2, 3, 6) }])
+      };
+      THREE_MODULE.Raycaster = vi.fn(() => raycaster);
+
+      // Re-run setupRaycasting with the new mock
+      viewer.setupRaycasting();
       
-      const intersectedPoint = new MockVector3(2, 3, 6); 
-      const normalizedPoint = intersectedPoint.clone().normalize(); 
-                                                               
-      viewer.onSphereClick(normalizedPoint.x, normalizedPoint.y, normalizedPoint.z);
+      const clickEvent = new MouseEvent('click', { clientX: 100, clientY: 100 });
+      viewer.renderer.domElement.dispatchEvent(clickEvent);
          
       expect(mockOnSphereClick).toHaveBeenCalledWith(
         expect.closeTo(2/7), 
@@ -184,14 +128,16 @@ describe('ThreeViewer', () => {
   });
 
   describe('dispose', () => {
-    it('should call dispose on renderer and controls', () => {
+    it('should call dispose on renderer and controls and cancel animation frame', () => {
       const rendererDisposeSpy = vi.spyOn(viewer.renderer, 'dispose');
       const controlsDisposeSpy = vi.spyOn(viewer.controls, 'dispose');
+      const cancelAnimationFrameSpy = vi.spyOn(global, 'cancelAnimationFrame');
       
       viewer.dispose();
       
       expect(rendererDisposeSpy).toHaveBeenCalled();
       expect(controlsDisposeSpy).toHaveBeenCalled();
+      expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(viewer.animationFrameId);
     });
 
     it('should remove the renderer DOM element', () => {
