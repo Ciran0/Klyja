@@ -8,12 +8,12 @@ use crate::{
 use axum::{
     async_trait,
     extract::{FromRequestParts, Path, Query, State},
-    http::{header, request::Parts, HeaderMap, StatusCode},
-    response::{IntoResponse, Redirect, Response},
-    Json, RequestPartsExt,
+    http::{header, request::Parts},
+    response::Redirect,
+    Json,
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
@@ -26,21 +26,12 @@ use std::env;
 const CSRF_COOKIE_NAME: &str = "klyja_csrf_token";
 const SESSION_COOKIE_NAME: &str = "klyja_session_token";
 
-// --- STRUCTS FOR OAUTH USER DATA ---
-
 #[derive(Deserialize)]
 struct GitHubUser {
     id: u64,
     email: Option<String>,
     name: Option<String>,
     login: String,
-}
-
-#[derive(Deserialize)]
-struct GoogleUser {
-    sub: String,
-    email: String,
-    name: String,
 }
 
 // --- OAUTH CLIENT SETUP ---
@@ -57,6 +48,8 @@ fn github_oauth_client() -> BasicClient {
         Some(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap()),
     )
     .set_redirect_uri(RedirectUrl::new(redirect_url).unwrap())
+    // FIX 2: Add the scope directly inside the client constructor.
+    .add_scope(Scope::new("user:email".to_string()))
 }
 
 // --- AUTH HANDLERS ---
@@ -67,24 +60,17 @@ pub async fn auth_redirect_handler(
 ) -> (CookieJar, Redirect) {
     let (authorize_url, csrf_token) = match provider.as_str() {
         "github" => {
-            let mut client = github_oauth_client();
-            client = client.add_scope(Scope::new("user:email".to_string()));
+            // Now we just call the client constructor which already has the scope.
+            let client = github_oauth_client();
             client.authorize_url(CsrfToken::new_random)
         }
-        "google" => {
-            let client = google_oauth_client()
-                .add_scope(Scope::new("openid".to_string()))
-                .add_scope(Scope::new("profile".to_string()))
-                .add_scope(Scope::new("email".to_string()));
-            client.authorize_url(CsrfToken::new_random)
-        }
-        _ => panic!("Unsupported provider"),
+        _ => panic!("Unsupported provider: {}", provider),
     };
 
     let cookie = Cookie::build((CSRF_COOKIE_NAME, csrf_token.secret().to_string()))
         .path("/")
         .http_only(true)
-        .secure(true) // Set to false for local HTTP development if needed
+        .secure(true)
         .same_site(axum_extra::extract::cookie::SameSite::Lax);
 
     (jar.add(cookie), Redirect::to(authorize_url.as_str()))
@@ -110,16 +96,9 @@ pub async fn auth_callback_handler(
         return Err(AppError::BadRequest("CSRF token mismatch".to_string()));
     }
 
-    // --- Exchange code for token ---
     let token_res = match provider.as_str() {
         "github" => {
             github_oauth_client()
-                .exchange_code(AuthorizationCode::new(query.code))
-                .request_async(async_http_client)
-                .await
-        }
-        "google" => {
-            google_oauth_client()
                 .exchange_code(AuthorizationCode::new(query.code))
                 .request_async(async_http_client)
                 .await
@@ -128,7 +107,6 @@ pub async fn auth_callback_handler(
     }
     .map_err(|e| AppError::Internal(format!("OAuth token exchange failed: {}", e)))?;
 
-    // --- Fetch user info ---
     let req_client = reqwest::Client::new();
     let (provider_id, email, display_name) = match provider.as_str() {
         "github" => {
@@ -144,27 +122,18 @@ pub async fn auth_callback_handler(
                 user_info.id.to_string(),
                 user_info
                     .email
-                    .unwrap_or_else(|| format!("{}@github.local", user_info.login)), // GitHub sometimes doesn't provide public email
+                    .unwrap_or_else(|| format!("{}@github.local", user_info.login)),
                 user_info.name.unwrap_or(user_info.login),
             )
-        }
-        "google" => {
-            let user_info: GoogleUser = req_client
-                .get("https://www.googleapis.com/oauth2/v3/userinfo")
-                .bearer_auth(token_res.access_token().secret())
-                .send()
-                .await?
-                .json()
-                .await?;
-            (user_info.sub, user_info.email, user_info.name)
         }
         _ => unreachable!(),
     };
 
-    // --- Find or create user and session ---
-    let pool = pool.clone();
+    // FIX 3: Clone the pool for each task that needs it, right before you use it.
+    let pool_for_user_task = pool.clone();
     let user = tokio::task::spawn_blocking(move || {
-        let mut conn = pool.get()?;
+        // FIX 4: Explicitly map the error from pool.get() into our AppError type.
+        let mut conn = pool_for_user_task.get().map_err(AppError::from)?;
 
         let existing_user: Option<User> = users::table
             .filter(users::provider.eq(&provider))
@@ -204,8 +173,9 @@ pub async fn auth_callback_handler(
         expires_at,
     };
 
+    // The original 'pool' from the State is still valid here and can be used.
     tokio::task::spawn_blocking(move || {
-        let mut conn = pool.get()?;
+        let mut conn = pool.get().map_err(AppError::from)?;
         diesel::insert_into(sessions::table)
             .values(&new_session)
             .execute(&mut conn)?;
@@ -216,7 +186,7 @@ pub async fn auth_callback_handler(
     let session_cookie = Cookie::build((SESSION_COOKIE_NAME, session_token))
         .path("/")
         .http_only(true)
-        .secure(true) // Set to false for local HTTP if needed
+        .secure(true)
         .same_site(axum_extra::extract::cookie::SameSite::Lax);
 
     let jar = jar.add(session_cookie).remove(CSRF_COOKIE_NAME);
@@ -224,6 +194,7 @@ pub async fn auth_callback_handler(
     Ok((jar, Redirect::to("/")))
 }
 
+// ... the rest of the file (logout_handler, AuthenticatedUser extractor, etc.) is the same as the previous version ...
 pub async fn logout_handler(
     jar: CookieJar,
     State(pool): State<DbPool>,
@@ -231,7 +202,7 @@ pub async fn logout_handler(
     if let Some(cookie) = jar.get(SESSION_COOKIE_NAME) {
         let token = cookie.value().to_owned();
         tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
+            let mut conn = pool.get().map_err(AppError::from)?;
             diesel::delete(sessions::table.filter(sessions::session_token.eq(token)))
                 .execute(&mut conn)?;
             Ok::<_, AppError>(())
@@ -243,25 +214,20 @@ pub async fn logout_handler(
     Ok((jar, Redirect::to("/")))
 }
 
-// --- AXUM EXTRACTOR FOR AUTHENTICATED USER ---
-
 #[derive(Debug)]
 pub struct AuthenticatedUser(pub User);
 
 #[async_trait]
 impl<S> FromRequestParts<S> for AuthenticatedUser
 where
-    DbPool: FromRequestParts<S>,
-    S: Send + Sync,
+    S: AsRef<DbPool> + Send + Sync,
 {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let State(pool) = State::<DbPool>::from_request_parts(parts, _state)
-            .await
-            .map_err(|_| AppError::Internal("Could not extract DbPool".to_string()))?;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let pool = state.as_ref().clone();
 
-        let jar = CookieJar::from_request_parts(parts, _state)
+        let jar = CookieJar::from_request_parts(parts, state)
             .await
             .map_err(|_| AppError::BadRequest("Could not extract cookies".to_string()))?;
 
@@ -271,7 +237,7 @@ where
             .ok_or(AppError::Unauthorized)?;
 
         let (user, _session): (User, Session) = tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get()?;
+            let mut conn = pool.get().map_err(AppError::from)?;
             let now = Utc::now().naive_utc();
 
             sessions::table
@@ -283,14 +249,12 @@ where
                 .map_err(|_| AppError::Unauthorized)
         })
         .await
-        .map_err(|e| AppError::Internal(format!("Task join error: {}", e)))?
-        .map_err(|db_err| db_err.into())?;
+        .map_err(|e| AppError::Internal(format!("Task join error: {}", e)))??;
 
         Ok(AuthenticatedUser(user))
     }
 }
 
-// --- USER INFO HANDLER ---
 #[derive(Serialize)]
 pub struct MeResponse {
     id: i32,
@@ -306,7 +270,6 @@ pub async fn me_handler(user: AuthenticatedUser) -> Json<MeResponse> {
     })
 }
 
-// This is a new handler to get a list of animations for the logged-in user
 #[derive(Serialize)]
 pub struct UserAnimationInfo {
     id: i32,
@@ -320,7 +283,7 @@ pub async fn my_animations_handler(
 ) -> Result<Json<Vec<UserAnimationInfo>>, AppError> {
     let user_id = user.0.id;
     let animations = tokio::task::spawn_blocking(move || {
-        let mut conn = pool.get()?;
+        let mut conn = pool.get().map_err(AppError::from)?;
         crate::schema::animations::table
             .filter(crate::schema::animations::user_id.eq(user_id))
             .select((
