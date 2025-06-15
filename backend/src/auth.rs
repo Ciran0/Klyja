@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{
     async_trait,
-    extract::{FromRequestParts, Path, Query, State},
+    extract::{FromRef, FromRequestParts, Path, Query, State},
     http::{header, request::Parts},
     response::Redirect,
     Json,
@@ -22,6 +22,7 @@ use oauth2::{
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::env;
+use utoipa::ToSchema;
 
 const CSRF_COOKIE_NAME: &str = "klyja_csrf_token";
 const SESSION_COOKIE_NAME: &str = "klyja_session_token";
@@ -48,8 +49,6 @@ fn github_oauth_client() -> BasicClient {
         Some(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap()),
     )
     .set_redirect_uri(RedirectUrl::new(redirect_url).unwrap())
-    // FIX 2: Add the scope directly inside the client constructor.
-    .add_scope(Scope::new("user:email".to_string()))
 }
 
 // --- AUTH HANDLERS ---
@@ -60,9 +59,11 @@ pub async fn auth_redirect_handler(
 ) -> (CookieJar, Redirect) {
     let (authorize_url, csrf_token) = match provider.as_str() {
         "github" => {
-            // Now we just call the client constructor which already has the scope.
             let client = github_oauth_client();
-            client.authorize_url(CsrfToken::new_random)
+            client
+                .authorize_url(CsrfToken::new_random)
+                .add_scope(Scope::new("user:email".to_string()))
+                .url()
         }
         _ => panic!("Unsupported provider: {}", provider),
     };
@@ -220,12 +221,13 @@ pub struct AuthenticatedUser(pub User);
 #[async_trait]
 impl<S> FromRequestParts<S> for AuthenticatedUser
 where
-    S: AsRef<DbPool> + Send + Sync,
+    DbPool: FromRef<S>,
+    S: Send + Sync,
 {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let pool = state.as_ref().clone();
+        let pool = DbPool::from_ref(state);
 
         let jar = CookieJar::from_request_parts(parts, state)
             .await
@@ -236,8 +238,11 @@ where
             .map(|cookie| cookie.value().to_string())
             .ok_or(AppError::Unauthorized)?;
 
+        // Clone the pool for the blocking task
+        let pool_for_task = pool.clone();
         let (user, _session): (User, Session) = tokio::task::spawn_blocking(move || {
-            let mut conn = pool.get().map_err(AppError::from)?;
+            // I've also simplified the .get() call here for consistency
+            let mut conn = pool_for_task.get()?;
             let now = Utc::now().naive_utc();
 
             sessions::table
@@ -255,13 +260,23 @@ where
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct MeResponse {
     id: i32,
     display_name: String,
     email: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    tag = "Auth",
+    responses(
+        (status = 200, description = "Current user info", body = MeResponse),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn me_handler(user: AuthenticatedUser) -> Json<MeResponse> {
     Json(MeResponse {
         id: user.0.id,
@@ -270,21 +285,35 @@ pub async fn me_handler(user: AuthenticatedUser) -> Json<MeResponse> {
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UserAnimationInfo {
     id: i32,
     name: String,
     updated_at: NaiveDateTime,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/my_animations",
+    tag = "Animations",
+    responses(
+        (status = 200, description = "List of user's animations", body = Vec<UserAnimationInfo>),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn my_animations_handler(
     user: AuthenticatedUser,
     State(pool): State<DbPool>,
 ) -> Result<Json<Vec<UserAnimationInfo>>, AppError> {
     let user_id = user.0.id;
-    let animations = tokio::task::spawn_blocking(move || {
-        let mut conn = pool.get().map_err(AppError::from)?;
-        crate::schema::animations::table
+    // CORRECTED: Added an explicit return type to the closure
+    let animations = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+        // SIMPLIFIED: `pool.get()?` is cleaner. The `?` will convert the r2d2::Error into AppError.
+        let mut conn = pool.get()?;
+
+        // ADDED `?` to propagate the Diesel error, which will also be converted into AppError.
+        let result = crate::schema::animations::table
             .filter(crate::schema::animations::user_id.eq(user_id))
             .select((
                 crate::schema::animations::id,
@@ -292,7 +321,9 @@ pub async fn my_animations_handler(
                 crate::schema::animations::updated_at,
             ))
             .order(crate::schema::animations::updated_at.desc())
-            .load::<(i32, String, NaiveDateTime)>(&mut conn)
+            .load::<(i32, String, NaiveDateTime)>(&mut conn)?;
+
+        Ok(result)
     })
     .await??;
 

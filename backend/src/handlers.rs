@@ -7,8 +7,9 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SuccessfulSaveResponsePayload {
     pub id: i32,
     pub message: String,
