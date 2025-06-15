@@ -6,6 +6,7 @@ use axum::{
 };
 //use diesel::r2d2;
 use serde::Serialize; // For the error response struct for JSON
+use thiserror::Error; // For cleaner error definitions
 use utoipa::ToSchema; // For OpenAPI documentation
 
 // This struct will define the shape of our JSON error responses.

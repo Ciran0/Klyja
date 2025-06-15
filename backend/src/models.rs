@@ -40,11 +40,43 @@ pub struct NewAnimation<'a> {
     // id, created_at, updated_at are handled by the database
 }
 
-// Optional: Struct for updating data (if needed later)
-// #[derive(AsChangeset, Debug, Deserialize)]
-// #[diesel(table_name = crate::schema::animations)]
-// pub struct UpdateAnimation<'a> {
-//     pub name: Option<&'a str>,
-//     pub protobuf_data: Option<&'a [u8]>,
-//     // updated_at is handled by trigger
-// }
+#[derive(Queryable, Selectable, Identifiable, Debug, Serialize, ToSchema)]
+#[diesel(table_name = crate::schema::users)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct User {
+    pub id: i32,
+    pub provider: String,
+    pub provider_id: String,
+    pub email: String,
+    pub display_name: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::users)]
+pub struct NewUser<'a> {
+    pub provider: &'a str,
+    pub provider_id: &'a str,
+    pub email: &'a str,
+    pub display_name: &'a str,
+}
+
+#[derive(Queryable, Identifiable, Associations, Debug)]
+#[diesel(belongs_to(User))]
+#[diesel(table_name = crate::schema::sessions)]
+#[diesel(primary_key(session_token))]
+pub struct Session {
+    pub session_token: String,
+    pub user_id: i32,
+    pub expires_at: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::sessions)]
+pub struct NewSession {
+    pub session_token: String,
+    pub user_id: i32,
+    pub expires_at: NaiveDateTime,
+}
