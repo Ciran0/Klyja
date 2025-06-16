@@ -99,14 +99,15 @@ impl Drop for TestDb {
 
 /// Creates test data for integration tests
 pub mod fixtures {
-    use backend::models::{Animation, NewAnimation};
-    // Corrected imports based on the new structure (Feature, FeatureType, Point, etc.)
+    use backend::models::{Animation, NewAnimation, NewSession, NewUser, Session, User};
     use backend::protobuf_gen::{
         Feature, FeatureStructureSnapshot, FeatureType, MapAnimation, Point, PointAnimationPath,
         PositionKeyframe,
     };
+    use chrono::{Duration, Utc};
     use diesel::prelude::*;
     use prost::Message;
+    use rand::{distributions::Alphanumeric, Rng};
     use std::collections::HashMap; // For feature properties
 
     pub fn create_test_animation_proto(name: &str) -> Vec<u8> {
@@ -150,18 +151,53 @@ pub mod fixtures {
         animation.encode_to_vec()
     }
 
-    pub fn insert_test_animation(conn: &mut PgConnection, name: &str) -> Animation {
+    pub fn insert_test_animation(conn: &mut PgConnection, name: &str, user_id: i32) -> Animation {
         use backend::schema::animations;
 
         let new_animation = NewAnimation {
             name,
             protobuf_data: &create_test_animation_proto(name),
-            user_id: None,
+            user_id: Some(user_id),
         };
 
         diesel::insert_into(animations::table)
             .values(&new_animation)
             .get_result::<Animation>(conn)
             .expect("Failed to insert test animation")
+    }
+
+    pub fn create_user_and_session(conn: &mut PgConnection) -> (User, Session) {
+        use backend::schema::{sessions, users};
+
+        let new_user = NewUser {
+            provider: "test_provider",
+            provider_id: &uuid::Uuid::new_v4().to_string(),
+            email: "test@example.com",
+            display_name: "Test User",
+        };
+
+        let user = diesel::insert_into(users::table)
+            .values(&new_user)
+            .get_result::<User>(conn)
+            .expect("Failed to insert test user");
+
+        let session_token: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(64)
+            .map(char::from)
+            .collect();
+
+        let new_session = NewSession {
+            session_token,
+            user_id: user.id,
+            expires_at: (Utc::now() + Duration::days(1)).naive_utc(),
+        };
+
+        let session = diesel::insert_into(sessions::table)
+            .values(&new_session)
+            .get_result::<Session>(conn)
+            .expect("Failed to insert test session");
+
+        (user, session)
     }
 }

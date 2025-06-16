@@ -1,5 +1,5 @@
 // klyja/backend/src/models.rs
-use crate::schema::{animations, sessions, users};
+//use crate::schema;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
