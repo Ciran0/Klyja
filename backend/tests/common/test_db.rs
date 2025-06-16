@@ -156,6 +156,7 @@ pub mod fixtures {
         let new_animation = NewAnimation {
             name,
             protobuf_data: &create_test_animation_proto(name),
+            user_id: None,
         };
 
         diesel::insert_into(animations::table)

@@ -24,7 +24,7 @@ pub enum AppError {
     DatabasePool(#[from] ::r2d2::Error),
 
     #[error("Database query error: {0}")]
-    DatabaseQuery(#[from] diesel::result::Error),
+    DatabaseQuery(diesel::result::Error),
 
     #[error("Resource not found: {0}")]
     NotFound(String),
@@ -73,5 +73,18 @@ impl IntoResponse for AppError {
 
         let body = Json(ErrorResponsePayload { error: message });
         (status_code, body).into_response()
+    }
+}
+
+impl From<diesel::result::Error> for AppError {
+    fn from(err: diesel::result::Error) -> Self {
+        match err {
+            // If the error is NotFound, create our specific AppError::NotFound.
+            diesel::result::Error::NotFound => {
+                AppError::NotFound("Record not found in database".to_string())
+            }
+            // For all other diesel errors, wrap them in the general DatabaseQuery variant.
+            _ => AppError::DatabaseQuery(err),
+        }
     }
 }

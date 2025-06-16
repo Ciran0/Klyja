@@ -66,6 +66,7 @@ mod tests {
             protobuf_data: vec![1, 2, 3, 4],
             created_at: now,
             updated_at: now,
+            user_id: None,
         };
 
         let json = serde_json::to_string(&animation).expect("Failed to serialize Animation");
