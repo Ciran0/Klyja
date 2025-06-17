@@ -2,9 +2,12 @@
 
 // Include Generated Protobuf Code
 pub mod protobuf_gen {
+    // This will include the generated code from your OUT_DIR
+    // Example: klyja.map_animation.v1.rs
     include!(concat!(env!("OUT_DIR"), "/klyja.map_animation.v1.rs"));
 }
 
+pub mod auth;
 pub mod db;
 pub mod errors;
 pub mod handlers;
@@ -20,7 +23,7 @@ pub type DbPool = r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::PgConnectio
 mod tests {
     use crate::errors::AppError;
     use crate::models::Animation;
-    use crate::protobuf_gen::MapAnimation;
+    use crate::protobuf_gen::MapAnimation; // Assuming this is the correct path after generation
     use diesel::result::Error as DieselError;
     use prost::DecodeError;
 
@@ -28,32 +31,32 @@ mod tests {
     fn test_app_error_from_diesel_error() {
         let diesel_error = DieselError::NotFound;
         let app_error = AppError::from(diesel_error);
-        
+
         match app_error {
-            AppError::NotFound(_) => {}, // This is what we expect
+            AppError::NotFound(_) => {} // This is what we expect
             _ => panic!("Expected NotFound error"),
         }
-        
+
         let other_error = DieselError::RollbackTransaction;
         let app_error = AppError::from(other_error);
-        
+
         match app_error {
-            AppError::DatabaseQuery(_) => {}, // This is what we expect for non-NotFound errors
+            AppError::DatabaseQuery(_) => {} // This is what we expect for non-NotFound errors
             _ => panic!("Expected DatabaseQuery error"),
         }
     }
-    
+
     #[test]
     fn test_app_error_from_decode_error() {
         let decode_error = DecodeError::new("Test decode error");
         let app_error = AppError::from(decode_error);
-        
+
         match app_error {
-            AppError::ProtobufDecode(_) => {}, // This is expected
+            AppError::ProtobufDecode(_) => {} // This is expected
             _ => panic!("Expected ProtobufDecode error"),
         }
     }
-    
+
     #[test]
     fn test_animation_serialization() {
         let now = chrono::Local::now().naive_local();
@@ -63,21 +66,22 @@ mod tests {
             protobuf_data: vec![1, 2, 3, 4],
             created_at: now,
             updated_at: now,
+            user_id: None,
         };
-        
+
         let json = serde_json::to_string(&animation).expect("Failed to serialize Animation");
-        
+
         assert!(json.contains("\"id\":1"));
         assert!(json.contains("\"name\":\"Test Animation\""));
         assert!(!json.contains("protobuf_data")); // Skipped in serialization
     }
-    
+
     #[test]
     fn test_map_animation_default() {
         let animation = MapAnimation::default();
-        
+
         assert_eq!(animation.name, "");
-        assert!(animation.polygons.is_empty());
+        assert!(animation.features.is_empty()); // Changed from polygons to features
         assert_eq!(animation.total_frames, 0);
     }
 }

@@ -99,51 +99,105 @@ impl Drop for TestDb {
 
 /// Creates test data for integration tests
 pub mod fixtures {
-    use backend::models::{Animation, NewAnimation};
-    use backend::protobuf_gen::{AnimatedPoint, MapAnimation, Point, Polygon};
+    use backend::models::{Animation, NewAnimation, NewSession, NewUser, Session, User};
+    use backend::protobuf_gen::{
+        Feature, FeatureStructureSnapshot, FeatureType, MapAnimation, Point, PointAnimationPath,
+        PositionKeyframe,
+    };
+    use chrono::{Duration, Utc};
     use diesel::prelude::*;
     use prost::Message;
+    use rand::{distributions::Alphanumeric, Rng};
+    use std::collections::HashMap; // For feature properties
 
     pub fn create_test_animation_proto(name: &str) -> Vec<u8> {
-        let point = Point {
+        let initial_point_pos = Point {
             x: 1.0,
             y: 2.0,
             z: Some(3.0),
         };
 
-        let animated_point = AnimatedPoint {
-            point_id: "test-point".to_string(),
-            initial_position: Some(point),
-            movements: vec![],
+        let point_animation_path = PointAnimationPath {
+            point_id: "test-point-id".to_string(),
+            keyframes: vec![PositionKeyframe {
+                frame: 0,
+                position: Some(initial_point_pos),
+            }],
         };
 
-        let polygon = Polygon {
-            polygon_id: "test-polygon".to_string(),
-            points: vec![animated_point],
-            properties: Default::default(),
+        let feature_structure_snapshot = FeatureStructureSnapshot {
+            frame: 0,
+            ordered_point_ids: vec!["test-point-id".to_string()],
+        };
+
+        let test_feature = Feature {
+            feature_id: "test-feature-id".to_string(),
+            name: "Test Feature".to_string(),
+            r#type: FeatureType::Polygon as i32, // Example: Polygon type
+            appearance_frame: 0,
+            disappearance_frame: 30,
+            point_animation_paths: vec![point_animation_path],
+            structure_snapshots: vec![feature_structure_snapshot],
+            properties: HashMap::new(),
         };
 
         let animation = MapAnimation {
             animation_id: format!("test-{}", uuid::Uuid::new_v4()),
             name: name.to_string(),
             total_frames: 30,
-            polygons: vec![polygon],
+            features: vec![test_feature], // Changed from polygons
         };
 
         animation.encode_to_vec()
     }
 
-    pub fn insert_test_animation(conn: &mut PgConnection, name: &str) -> Animation {
+    pub fn insert_test_animation(conn: &mut PgConnection, name: &str, user_id: i32) -> Animation {
         use backend::schema::animations;
 
         let new_animation = NewAnimation {
             name,
             protobuf_data: &create_test_animation_proto(name),
+            user_id: Some(user_id),
         };
 
         diesel::insert_into(animations::table)
             .values(&new_animation)
             .get_result::<Animation>(conn)
             .expect("Failed to insert test animation")
+    }
+
+    pub fn create_user_and_session(conn: &mut PgConnection) -> (User, Session) {
+        use backend::schema::{sessions, users};
+
+        let new_user = NewUser {
+            provider: "test_provider",
+            provider_id: &uuid::Uuid::new_v4().to_string(),
+            email: "test@example.com",
+            display_name: "Test User",
+        };
+
+        let user = diesel::insert_into(users::table)
+            .values(&new_user)
+            .get_result::<User>(conn)
+            .expect("Failed to insert test user");
+
+        let session_token: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(64)
+            .map(char::from)
+            .collect();
+
+        let new_session = NewSession {
+            session_token,
+            user_id: user.id,
+            expires_at: (Utc::now() + Duration::days(1)).naive_utc(),
+        };
+
+        let session = diesel::insert_into(sessions::table)
+            .values(&new_session)
+            .get_result::<Session>(conn)
+            .expect("Failed to insert test session");
+
+        (user, session)
     }
 }

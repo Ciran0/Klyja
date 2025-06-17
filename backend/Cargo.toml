@@ -5,13 +5,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.7"                # The web framework
-tokio = { version = "1", features = ["full"] } # Async runtime
-tower-http = { version = "0.5", features = ["fs", "trace", "cors"] } # For static file serving, logging, CORS
-tracing = "0.1"             # Logging framework
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
+tracing = "0.1" # Logging framework
 tracing-subscriber = { version = "0.3", features = ["env-filter"] } # Logging setup
-serde = { version = "1", features = ["derive"] } # Serialization/Deserialization (for JSON APIs later)
-serde_json = "1"            # JSON support
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Database dependencies (add features as needed)
 diesel = { version = "2.1", features = ["postgres", "r2d2", "chrono"] } # ORM, connection pooling, date/time types
@@ -28,6 +28,12 @@ utoipa-swagger-ui = { version = "6", features = ["axum"] }
 schemars = "0.8"
 
 r2d2 = "0.8"
+
+axum-extra = { version = "0.9", features = ["cookie"] }
+oauth2 = "4.4"
+reqwest = { version = "0.12", features = ["json"] } # For making requests to OAuth provider
+rand = { version = "0.8", features = ["getrandom"] }
+thiserror = "1.0" # For cleaner error handling
 
 [dev-dependencies]
 tokio-test = "0.4"          # Utilities for testing async code

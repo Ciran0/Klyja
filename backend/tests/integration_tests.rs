@@ -1,20 +1,22 @@
 // backend/tests/integration_tests.rs
 mod common;
 
-use axum::http::StatusCode; // Removed Request and body::Body
-use axum_test::TestServer;
-use backend::protobuf_gen::MapAnimation;
-use backend::{handlers, DbPool};
-use bytes::Bytes; // Import Bytes
-use common::{fixtures, TestDb};
+use axum::http::StatusCode;
+use axum_extra::extract::cookie::Cookie;
+use axum_test::{TestRequest, TestServer};
+use backend::protobuf_gen::{Feature, FeatureType, MapAnimation};
+use backend::{
+    handlers,
+    models::{Session, User},
+    DbPool,
+};
+use bytes::Bytes;
+use common::test_db::{fixtures, TestDb};
 use prost::Message;
 use rstest::*;
-// tower::ServiceExt is not directly needed if you are using TestServer methods
-// If you were manually building a service and calling it, then ServiceExt would be used.
-// For now, let's comment it out as TestServer abstracts its usage.
-// use tower::ServiceExt; // for oneshot
+use std::collections::HashMap;
 
-/// Creates a test server with the test database
+/// Creates a test server with all necessary routes for integration tests.
 async fn create_test_app(pool: DbPool) -> TestServer {
     let app = axum::Router::new()
         .route(
@@ -34,6 +36,36 @@ async fn create_test_app(pool: DbPool) -> TestServer {
     TestServer::new(app).unwrap()
 }
 
+/// A test helper that bundles a TestServer with an authenticated user and session.
+struct AuthenticatedTestServer {
+    server: TestServer,
+    user: User,
+    session: Session,
+}
+
+impl AuthenticatedTestServer {
+    /// Creates a new instance of the test server, a new user, and a session for that user.
+    async fn new(pool: DbPool) -> Self {
+        let mut conn = pool.get().unwrap();
+        let (user, session) = fixtures::create_user_and_session(&mut conn);
+        let server = create_test_app(pool).await;
+
+        AuthenticatedTestServer {
+            server,
+            user,
+            session,
+        }
+    }
+
+    /// Attaches the authentication cookie to a given TestRequest.
+    fn with_auth_cookie(&self, request: TestRequest) -> axum_test::TestRequest {
+        let cookie = Cookie::new("klyja_session_token", self.session.session_token.clone());
+        request.add_cookie(cookie)
+    }
+}
+
+// --- Test Cases ---
+
 #[tokio::test]
 async fn test_health_check() {
     let test_db = TestDb::new();
@@ -46,16 +78,33 @@ async fn test_health_check() {
 }
 
 #[tokio::test]
-async fn test_save_animation_success() {
+async fn test_save_animation_unauthorized() {
     let test_db = TestDb::new();
     let server = create_test_app(test_db.pool.clone()).await;
+    let animation_data_vec = fixtures::create_test_animation_proto("Unauthorized Test");
+    let animation_data_bytes = Bytes::from(animation_data_vec);
 
-    let animation_data_vec = fixtures::create_test_animation_proto("Test Animation");
-    let animation_data_bytes = Bytes::from(animation_data_vec); // Convert to Bytes
-
+    // Make the request without an authentication cookie
     let response = server
         .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+        .bytes(animation_data_bytes)
+        .await;
+
+    // Expect an UNAUTHORIZED status code
+    assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_save_animation_success() {
+    let test_db = TestDb::new();
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
+    let animation_data_vec = fixtures::create_test_animation_proto("Test Animation");
+    let animation_data_bytes = Bytes::from(animation_data_vec);
+
+    let request = auth_server.server.post("/api/save_animation");
+    let response = auth_server
+        .with_auth_cookie(request)
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::CREATED);
@@ -68,14 +117,13 @@ async fn test_save_animation_success() {
 #[tokio::test]
 async fn test_save_animation_invalid_protobuf() {
     let test_db = TestDb::new();
-    let server = create_test_app(test_db.pool.clone()).await;
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
+    let invalid_data_bytes = Bytes::from(vec![0xFF, 0xFE, 0xFD]); // Invalid protobuf data
 
-    let invalid_data_vec = vec![0xFF, 0xFF, 0xFF, 0xFF];
-    let invalid_data_bytes = Bytes::from(invalid_data_vec); // Convert to Bytes
-
-    let response = server
-        .post("/api/save_animation")
-        .bytes(invalid_data_bytes) // Pass Bytes
+    let request = auth_server.server.post("/api/save_animation");
+    let response = auth_server
+        .with_auth_cookie(request)
+        .bytes(invalid_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
@@ -84,27 +132,26 @@ async fn test_save_animation_invalid_protobuf() {
     assert!(json["error"]
         .as_str()
         .unwrap()
-        .contains("Invalid data format"));
+        .contains("Failed to decode Protobuf message"));
 }
 
 #[tokio::test]
 async fn test_load_animation_success() {
     let test_db = TestDb::new();
-
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
     let mut conn = test_db.conn();
-    let saved_animation = fixtures::insert_test_animation(&mut conn, "Load Test");
+    let saved_animation =
+        fixtures::insert_test_animation(&mut conn, "Load Test", auth_server.user.id);
     drop(conn);
 
-    let server = create_test_app(test_db.pool.clone()).await;
-
-    let response = server
-        .get(&format!("/api/load_animation/{}", saved_animation.id))
-        .await;
+    let request = auth_server
+        .server
+        .get(&format!("/api/load_animation/{}", saved_animation.id));
+    let response = auth_server.with_auth_cookie(request).await;
 
     assert_eq!(response.status_code(), StatusCode::OK);
 
-    // Get Bytes directly from the response by consuming it
-    let body_bytes: Bytes = response.into_bytes(); // Changed from response.bytes()
+    let body_bytes: Bytes = response.into_bytes();
     let decoded = MapAnimation::decode(body_bytes).expect("Failed to decode response");
     assert_eq!(decoded.name, "Load Test");
 }
@@ -112,9 +159,10 @@ async fn test_load_animation_success() {
 #[tokio::test]
 async fn test_load_animation_not_found() {
     let test_db = TestDb::new();
-    let server = create_test_app(test_db.pool.clone()).await;
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
 
-    let response = server.get("/api/load_animation/99999").await;
+    let request = auth_server.server.get("/api/load_animation/99999"); // Non-existent ID
+    let response = auth_server.with_auth_cookie(request).await;
 
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
 
@@ -123,30 +171,60 @@ async fn test_load_animation_not_found() {
 }
 
 #[tokio::test]
+async fn test_load_animation_access_denied_for_other_user() {
+    let test_db = TestDb::new();
+    let mut conn = test_db.conn();
+
+    // Create User A and their animation
+    let (user_a, _session_a) = fixtures::create_user_and_session(&mut conn);
+    let animation_a = fixtures::insert_test_animation(&mut conn, "User A's Animation", user_a.id);
+    drop(conn); // Release the connection
+
+    // Create User B who will try to access the animation
+    let auth_server_b = AuthenticatedTestServer::new(test_db.pool.clone()).await;
+
+    // Assert that User B is not User A
+    assert_ne!(auth_server_b.user.id, user_a.id);
+
+    // User B attempts to load User A's animation
+    let request = auth_server_b
+        .server
+        .get(&format!("/api/load_animation/{}", animation_a.id));
+    let response = auth_server_b.with_auth_cookie(request).await;
+
+    // The service logic should prevent access, resulting in a NOT_FOUND error
+    // because the animation is not found *for that specific user*.
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn test_save_and_load_flow() {
     let test_db = TestDb::new();
-    let server = create_test_app(test_db.pool.clone()).await;
-
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
     let animation_data_vec = fixtures::create_test_animation_proto("Flow Test");
-    let animation_data_bytes = Bytes::from(animation_data_vec.clone()); // Clone Vec for Bytes, keep original for assert
+    let animation_data_bytes = Bytes::from(animation_data_vec.clone());
 
-    let save_response = server
-        .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+    // 1. Save the animation
+    let save_request = auth_server.server.post("/api/save_animation");
+    let save_response = auth_server
+        .with_auth_cookie(save_request)
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(save_response.status_code(), StatusCode::CREATED);
     let save_json: serde_json::Value = save_response.json();
     let animation_id = save_json["id"].as_i64().unwrap();
 
-    let load_response = server
-        .get(&format!("/api/load_animation/{}", animation_id))
-        .await;
+    // 2. Load the animation
+    let load_request = auth_server
+        .server
+        .get(&format!("/api/load_animation/{}", animation_id));
+    let load_response = auth_server.with_auth_cookie(load_request).await;
 
     assert_eq!(load_response.status_code(), StatusCode::OK);
 
-    let loaded_bytes: Bytes = load_response.into_bytes(); // Changed from load_response.bytes()
-    assert_eq!(loaded_bytes.to_vec(), animation_data_vec); // Compare Vec<u8> with Vec<u8>
+    let loaded_bytes: Bytes = load_response.into_bytes();
+    assert_eq!(loaded_bytes.to_vec(), animation_data_vec);
 }
 
 #[rstest]
@@ -154,32 +232,38 @@ async fn test_save_and_load_flow() {
 #[case::medium(100)]
 #[case::large(500)]
 #[tokio::test]
-async fn test_save_animation_various_sizes(#[case] polygon_count: usize) {
+async fn test_save_animation_various_sizes(#[case] feature_count: usize) {
     let test_db = TestDb::new();
-    let server = create_test_app(test_db.pool.clone()).await;
+    let auth_server = AuthenticatedTestServer::new(test_db.pool.clone()).await;
 
     let mut animation = MapAnimation {
         animation_id: format!("size-test-{}", uuid::Uuid::new_v4()),
-        name: format!("Size Test {}", polygon_count),
+        name: format!("Size Test {}", feature_count),
         total_frames: 30,
-        polygons: Vec::with_capacity(polygon_count),
+        features: Vec::with_capacity(feature_count),
     };
 
-    for i in 0..polygon_count {
-        let polygon = backend::protobuf_gen::Polygon {
-            polygon_id: format!("poly-{}", i),
-            points: vec![],
-            properties: Default::default(),
+    for i in 0..feature_count {
+        let feature = Feature {
+            feature_id: format!("feature-{}", i),
+            name: format!("Feature {}", i),
+            r#type: FeatureType::Polygon as i32,
+            appearance_frame: 0,
+            disappearance_frame: 30,
+            point_animation_paths: vec![],
+            structure_snapshots: vec![],
+            properties: HashMap::new(),
         };
-        animation.polygons.push(polygon);
+        animation.features.push(feature);
     }
 
     let animation_data_vec = animation.encode_to_vec();
-    let animation_data_bytes = Bytes::from(animation_data_vec); // Convert to Bytes
+    let animation_data_bytes = Bytes::from(animation_data_vec);
 
-    let response = server
-        .post("/api/save_animation")
-        .bytes(animation_data_bytes) // Pass Bytes
+    let request = auth_server.server.post("/api/save_animation");
+    let response = auth_server
+        .with_auth_cookie(request)
+        .bytes(animation_data_bytes)
         .await;
 
     assert_eq!(response.status_code(), StatusCode::CREATED);
