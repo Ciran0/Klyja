@@ -7,6 +7,7 @@ pub mod protobuf_gen {
     include!(concat!(env!("OUT_DIR"), "/klyja.map_animation.v1.rs"));
 }
 
+pub mod auth;
 pub mod db;
 pub mod errors;
 pub mod handlers;
@@ -65,6 +66,7 @@ mod tests {
             protobuf_data: vec![1, 2, 3, 4],
             created_at: now,
             updated_at: now,
+            user_id: None,
         };
 
         let json = serde_json::to_string(&animation).expect("Failed to serialize Animation");
@@ -83,4 +85,3 @@ mod tests {
         assert_eq!(animation.total_frames, 0);
     }
 }
-

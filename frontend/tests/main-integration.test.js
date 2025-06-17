@@ -1,3 +1,4 @@
+// frontend/tests/main-integration.test.js
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { KlyjaApp } from '../js/main.js';
 import { ThreeViewer } from '../js/three-viewer.js';
@@ -20,6 +21,23 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
       <div class="main-content">
         <div id="viewer-container"></div>
         <aside id="controls-panel">
+          <div id="user-auth-panel">
+              <div id="user-info-panel" class="hidden">
+                  <p>
+                      Welcome, <strong id="user-display-name"></strong>!
+                  </p>
+                  <button id="logout-button">Logout</button>
+              </div>
+              <div id="login-panel">
+                  <a href="/api/auth/github" class="button">Login with GitHub</a>
+              </div>
+          </div>
+          <hr>
+          <div id="my-animations-panel" class="hidden">
+              <h3>My Animations</h3>
+              <ul id="my-animations-list">
+              </ul>
+          </div>
           <h3>Animation Settings</h3>
           <label for="anim-name-input">Animation Name:</label>
           <input type="text" id="anim-name-input" value="Untitled Animation">
@@ -52,7 +70,7 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
           <button id="add-keyframe-button">Add Keyframe</button>
           <hr>
           <h3>Save / Load</h3>
-          <button id="save-button">Save Animation</button>
+          <button id="save-button" disabled>Save Animation</button>
           <label for="load-id-input">Animation ID to Load:</label>
           <input type="number" id="load-id-input" placeholder="Enter ID">
           <button id="load-button">Load Animation</button>
@@ -96,6 +114,8 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
     ThreeViewer.mockImplementation(() => mockViewerInstance);
 
     mockApiClientInstance = {
+      getMe: vi.fn().mockRejectedValue(new Error('Not authenticated')), // Default to not logged in
+      getMyAnimations: vi.fn().mockResolvedValue([]),
       saveAnimation: vi.fn().mockResolvedValue({ id: 99, message: 'Saved' }),
       loadAnimation: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
     };
@@ -266,6 +286,19 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
 
   describe('Save and Load', () => {
     it('should save animation data', async () => {
+
+      // Authenticate the user for this test
+    mockApiClientInstance.getMe.mockResolvedValue({
+      id: 1,
+      username: 'testuser',
+      display_name: 'Test User',
+      avatar_url: 'http://example.com/avatar.png',
+      github_id: '12345'
+    });
+
+    app = new KlyjaApp();
+    await app.init();
+
       const animNameInput = document.getElementById('anim-name-input');
       animNameInput.value = "Save Test Name";
       animNameInput.dispatchEvent(new Event('input'));

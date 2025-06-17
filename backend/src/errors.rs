@@ -2,118 +2,92 @@
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json, // For creating JSON response bodies
+    Json,
 };
-//use diesel::r2d2;
-use serde::Serialize; // For the error response struct for JSON
-use utoipa::ToSchema; // For OpenAPI documentation
+use serde::Serialize;
+use thiserror::Error; // Using thiserror for cleaner error definitions
+use utoipa::ToSchema;
 
-// This struct will define the shape of our JSON error responses.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorResponsePayload {
-    #[schema(example = "Resource not found")] // Example for OpenAPI
+    #[schema(example = "Resource not found")]
     error: String,
 }
 
-// Our custom service error enum
-#[derive(Debug)] // Allow printing for logs
+// Our custom service error enum, now using `thiserror`
+#[derive(Debug, Error)]
 pub enum AppError {
-    // For errors originating from protobuf decoding
-    ProtobufDecode(prost::DecodeError),
-    // For errors originating from database connection pool
-    DatabasePool(::r2d2::Error),
-    // For errors originating from Diesel operations (queries, inserts, etc.)
+    #[error("Protobuf decode error: {0}")]
+    ProtobufDecode(#[from] prost::DecodeError),
+
+    #[error("Database connection pool error: {0}")]
+    DatabasePool(#[from] ::r2d2::Error),
+
+    #[error("Database query error: {0}")]
     DatabaseQuery(diesel::result::Error),
-    // For when a requested resource is not found (more specific than just a general DB error)
+
+    #[error("Resource not found: {0}")]
     NotFound(String),
-    // For other client-side errors, e.g. invalid input not caught by protobuf
-    #[allow(dead_code)]
+
+    #[error("Bad request: {0}")]
     BadRequest(String),
-    // For internal server errors that don't fit other categories
+
+    #[error("Internal server error: {0}")]
     Internal(String),
+
+    // --- NEW ERROR VARIANTS ---
+    #[error("Unauthorized")]
+    Unauthorized,
+
+    #[error("Reqwest error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("Task join error: {0}")]
+    Join(#[from] tokio::task::JoinError),
 }
 
-// How AppError converts into an HTTP response for Axum
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status_code, message) = match self {
-            AppError::ProtobufDecode(err) => {
-                tracing::error!("SERVICE ERROR - ProtobufDecode: {}", err);
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("Invalid data format: {}", err),
-                )
-            }
-            AppError::DatabasePool(err) => {
-                tracing::error!("SERVICE ERROR - DatabasePool: {}", err);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Error connecting to database".to_string(),
-                )
-            }
-            AppError::DatabaseQuery(err) => {
-                tracing::error!("SERVICE ERROR - DatabaseQuery: {}", err);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "A database error occurred".to_string(),
-                )
-            }
-            AppError::NotFound(msg) => {
-                tracing::warn!("SERVICE ERROR - NotFound: {}", msg);
-                (StatusCode::NOT_FOUND, msg)
-            }
-            AppError::BadRequest(msg) => {
-                tracing::warn!("SERVICE ERROR - BadRequest: {}", msg);
-                (StatusCode::BAD_REQUEST, msg)
-            }
-            AppError::Internal(msg) => {
-                tracing::error!("SERVICE ERROR - Internal: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, msg)
-            }
+        let (status_code, message) = match &self {
+            AppError::ProtobufDecode(_err) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to decode Protobuf message".to_string(),
+            ),
+            AppError::DatabasePool(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            AppError::DatabaseQuery(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+
+            // --- NEW MAPPINGS ---
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            AppError::Reqwest(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("External request failed: {}", err),
+            ),
+            AppError::Join(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal task error: {}", err),
+            ),
         };
 
-        // Create a JSON response body
+        // Log the full error for debugging
+        tracing::error!("SERVICE ERROR: {:?}", self);
+
         let body = Json(ErrorResponsePayload { error: message });
         (status_code, body).into_response()
     }
 }
 
-// Helper: Convert prost::DecodeError into AppError
-// This allows us to use `?` with functions returning prost::DecodeError
-// within service functions that return Result<_, AppError>
-impl From<prost::DecodeError> for AppError {
-    fn from(err: prost::DecodeError) -> Self {
-        AppError::ProtobufDecode(err)
-    }
-}
-
-// Helper: Convert r2d2::Error into AppError
-impl From<::r2d2::Error> for AppError {
-    fn from(err: ::r2d2::Error) -> Self {
-        AppError::DatabasePool(err)
-    }
-}
-
-// Helper: Convert diesel::result::Error into AppError
 impl From<diesel::result::Error> for AppError {
     fn from(err: diesel::result::Error) -> Self {
         match err {
+            // If the error is NotFound, create our specific AppError::NotFound.
             diesel::result::Error::NotFound => {
-                // You can put a generic message here or customize it if needed,
-                // though the IntoResponse logic will likely provide the final user-facing message.
-                AppError::NotFound(
-                    "The requested resource was not found in the database.".to_string(),
-                )
+                AppError::NotFound("Record not found in database".to_string())
             }
-            _ => AppError::DatabaseQuery(err), // Other Diesel errors map to DatabaseQuery
+            // For all other diesel errors, wrap them in the general DatabaseQuery variant.
+            _ => AppError::DatabaseQuery(err),
         }
     }
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct SuccessfulSaveResponsePayload {
-    #[schema(example = 1)] // Example for OpenAPI documentation
-    pub id: i32,
-    #[schema(example = "Animation saved successfully")] // Example for OpenAPI
-    pub message: String,
 }

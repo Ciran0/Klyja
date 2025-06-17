@@ -1,5 +1,5 @@
 # Stage 1: Build Geco (WASM)
-FROM rust:1.78 AS geco-builder
+FROM rust:1.87 AS geco-builder
 WORKDIR /app
 RUN apt-get update && \
     apt-get install -y curl protobuf-compiler && \
@@ -21,7 +21,7 @@ RUN cd frontend && npm install && npm run build
 # frontend/dist will contain the built assets
 
 # Stage 3: Build Backend (Rust)
-FROM rust:1.78 AS backend-builder
+FROM rust:1.87 AS backend-builder
 WORKDIR /app
 
 RUN apt-get update && \

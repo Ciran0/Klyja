@@ -45,10 +45,10 @@ fn test_animation_struct() {
         protobuf_data: vec![1, 2, 3],
         created_at: now,
         updated_at: now,
+        user_id: None,
     };
 
     assert_eq!(animation.id, 123);
     assert_eq!(animation.name, "Test");
     assert_eq!(animation.protobuf_data, vec![1, 2, 3]);
 }
-

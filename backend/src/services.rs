@@ -12,80 +12,89 @@ use prost::Message;
 pub struct AnimationService;
 
 impl AnimationService {
+    // Modified to accept a user ID
     pub async fn save_animation_logic(
-        pool: &DbPool, // Keep as reference
+        pool: &DbPool,
         animation_data_bytes: Bytes,
+        user_id: i32, // Added user_id parameter
     ) -> Result<i32, AppError> {
         tracing::info!(
-            "SERVICE: Processing save_animation_logic with {} bytes",
+            "SERVICE: User {} processing save_animation_logic with {} bytes",
+            user_id,
             animation_data_bytes.len()
         );
 
         let map_animation = MapAnimation::decode(animation_data_bytes.clone())?;
-
-        // Clone the pool and other necessary data to move into the blocking task
         let pool_clone = pool.clone();
-        let name_for_blocking_task = map_animation.name.clone(); // Renamed for clarity
+        let name_for_blocking_task = map_animation.name.clone();
         let data_for_blocking = animation_data_bytes.clone();
 
         let saved_animation_id = tokio::task::spawn_blocking(move || {
-            let mut conn = pool_clone.get().map_err(AppError::DatabasePool)?;
+            let mut conn = pool_clone.get()?;
             let new_animation_payload = NewAnimation {
-                name: &name_for_blocking_task, // Use the string cloned for the task
+                name: &name_for_blocking_task,
                 protobuf_data: &data_for_blocking,
+                user_id: Some(user_id), // Set the user_id
             };
 
             diesel::insert_into(schema::animations::table)
                 .values(&new_animation_payload)
+                .returning(Animation::as_returning())
                 .get_result::<Animation>(&mut conn)
-                .map_err(AppError::DatabaseQuery)
                 .map(|anim| anim.id)
+                .map_err(AppError::from) // Use From trait for error conversion
         })
-        .await
-        .map_err(|join_err| {
-            AppError::Internal(format!("Tokio spawn_blocking join error: {}", join_err))
-        })??;
+        .await??; // ?? unwraps JoinError then Result
 
         tracing::info!(
             "SERVICE: Animation '{}' saved successfully with ID {}.",
-            map_animation.name, // Use the original map_animation.name for logging here
+            map_animation.name,
             saved_animation_id
         );
         Ok(saved_animation_id)
     }
 
+    // Modified to accept a user ID for authorization
     pub async fn load_animation_logic(
         pool: &DbPool,
         animation_id_to_load: i32,
+        user_id: i32, // Added user_id for authorization check
     ) -> Result<Animation, AppError> {
         tracing::info!(
-            "SERVICE: Processing load_animation_logic for ID: {}",
+            "SERVICE: User {} processing load_animation_logic for ID: {}",
+            user_id,
             animation_id_to_load
         );
 
         let pool_clone = pool.clone();
 
-        let loaded_animation = tokio::task::spawn_blocking(move || {
-            let mut conn = pool_clone.get().map_err(AppError::DatabasePool)?; // Get conn and map r2d2 error
-            use crate::schema::animations::dsl::*;
+        let loaded_animation =
+            tokio::task::spawn_blocking(move || -> Result<Animation, AppError> {
+                let mut conn = pool_clone.get()?;
+                use crate::schema::animations::dsl::{self, animations}; // Import dsl and the table
 
-            let query_result: Result<Animation, diesel::result::Error> = animations
-                .find(animation_id_to_load)
-                .select(Animation::as_select())
-                .first::<Animation>(&mut conn);
+                let query_result = animations
+                    .filter(dsl::id.eq(animation_id_to_load)) // Condition 1: ID must match
+                    .filter(dsl::user_id.eq(user_id)) // Condition 2: User ID must match
+                    .select(Animation::as_select())
+                    .first::<Animation>(&mut conn)
+                    .map_err(|e| match e {
+                        diesel::result::Error::NotFound => AppError::NotFound(format!(
+                            "Animation with ID {} not found or access denied.",
+                            animation_id_to_load
+                        )),
+                        _ => AppError::from(e),
+                    })?;
 
-            // Explicitly convert diesel::result::Error to AppError using your From trait impl
-            query_result.map_err(AppError::from)
-        })
-        .await // Wait for the blocking task
-        .map_err(|join_err| {
-            AppError::Internal(format!("Tokio spawn_blocking join error: {}", join_err))
-        })??; // First ? for JoinError, second ? for AppError from the closure
+                Ok(query_result)
+            })
+            .await??;
 
         tracing::info!(
-            "SERVICE: Animation '{}' (ID: {}) loaded successfully.",
+            "SERVICE: Animation '{}' (ID: {}) loaded successfully by user {}.",
             loaded_animation.name,
-            animation_id_to_load
+            animation_id_to_load,
+            user_id
         );
         Ok(loaded_animation)
     }
