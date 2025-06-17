@@ -85,7 +85,7 @@ async fn main() {
         .parent()
         .expect("Failed to get project root directory");
 
-    let frontend_path = project_root.join("frontend");
+    let frontend_path = project_root.join("frontend/dist");
     let wasm_pkg_path = project_root.join("geco/pkg");
 
     tracing::info!(
