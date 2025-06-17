@@ -260,11 +260,11 @@ where
     }
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct MeResponse {
-    id: i32,
-    display_name: String,
-    email: String,
+    pub id: i32,
+    pub display_name: String,
+    pub email: String,
 }
 
 #[utoipa::path(
@@ -285,11 +285,11 @@ pub async fn me_handler(user: AuthenticatedUser) -> Json<MeResponse> {
     })
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct UserAnimationInfo {
-    id: i32,
-    name: String,
-    updated_at: NaiveDateTime,
+    pub id: i32,
+    pub name: String,
+    pub updated_at: NaiveDateTime,
 }
 
 #[utoipa::path(

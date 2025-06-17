@@ -71,12 +71,11 @@ impl AnimationService {
         let loaded_animation =
             tokio::task::spawn_blocking(move || -> Result<Animation, AppError> {
                 let mut conn = pool_clone.get()?;
-                use crate::schema::animations::dsl::*;
+                use crate::schema::animations::dsl::{self, animations}; // Import dsl and the table
 
-                // Find the animation only if it belongs to the current user.
                 let query_result = animations
-                    .find(animation_id_to_load)
-                    .filter(user_id.eq(user_id)) // Authorization check
+                    .filter(dsl::id.eq(animation_id_to_load)) // Condition 1: ID must match
+                    .filter(dsl::user_id.eq(user_id)) // Condition 2: User ID must match
                     .select(Animation::as_select())
                     .first::<Animation>(&mut conn)
                     .map_err(|e| match e {

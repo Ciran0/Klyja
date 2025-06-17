@@ -49,7 +49,10 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status_code, message) = match &self {
-            AppError::ProtobufDecode(err) => (StatusCode::BAD_REQUEST, err.to_string()),
+            AppError::ProtobufDecode(_err) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to decode Protobuf message".to_string(),
+            ),
             AppError::DatabasePool(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             AppError::DatabaseQuery(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
