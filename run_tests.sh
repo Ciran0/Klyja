@@ -9,7 +9,7 @@ cargo test
 
 echo "Running WASM unit tests..."
 cd ../geco
-cargo test --lib # Corrected line
+cargo test -- --lib
 
 echo "Running frontend tests with coverage..."
 cd ../frontend

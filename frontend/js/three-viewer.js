@@ -1,26 +1,21 @@
 // frontend/js/three-viewer.js
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import vertexShader from '../glsl/line_vertex.glsl?raw';
-import fragmentShader from '../glsl/line_fragment.glsl?raw';
-
-//MUST MATCH THE #define IN THE FRAGMENT SHADER
-const MAX_LINE_SEGMENTS = 2048;
 
 export class ThreeViewer {
   constructor(containerId, options = {}) {
     this.containerId = containerId;
-    console.log("[ThreeViewer Constructor] Options received:", options);
-    this.SPHERE_RADIUS = options.sphereRadius === undefined ? 1 : options.sphereRadius;
-    console.log("[ThreeViewer Constructor] Effective SPHERE_RADIUS:", this.SPHERE_RADIUS);
+    this.SPHERE_RADIUS = options.sphereRadius || 5;
     
+    // Three.js objects
     this.scene = null;
     this.camera = null;
     this.renderer = null;
     this.controls = null;
     this.mainSphereMesh = null;
-    this.animationFrameId = null; // Add this to hold the animation frame reference
+    this.visualObjects = [];
     
+    // Callbacks
     this.onSphereClick = null;
   }
 
@@ -36,7 +31,7 @@ export class ThreeViewer {
     this.setupLights();
     this.setupSphere();
     this.setupControls();
-    this.startAnimationLoop(); // Changed method name for clarity
+    this.setupAnimation();
     this.setupResize(viewerContainer);
     this.setupRaycasting();
   }
@@ -53,7 +48,7 @@ export class ThreeViewer {
       0.1,
       1000
     );
-    this.camera.position.z = this.SPHERE_RADIUS * 3.5;
+    this.camera.position.z = this.SPHERE_RADIUS * 2.5;
   }
 
   setupRenderer(container) {
@@ -71,31 +66,15 @@ export class ThreeViewer {
     this.scene.add(directionalLight);
   }
 
-
-setupSphere() {
-    const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 128, 64);
-
-    const texture_size = Math.ceil(Math.sqrt(MAX_LINE_SEGMENTS * 2));
-    const data = new Float32Array(texture_size * texture_size * 4); 
-
-    this.lineTexture = new THREE.DataTexture(data, texture_size, texture_size, THREE.RGBAFormat, THREE.FloatType);
-    this.lineTexture.needsUpdate = true; 
-
-    const shaderMaterial = new THREE.ShaderMaterial({
-      vertexShader,
-      fragmentShader,
-      uniforms: {
-        u_line_texture: { value: this.lineTexture },
-        u_texture_size: { value: texture_size },
-        u_line_count: { value: 0 },
-        u_sphere_radius: { value: this.SPHERE_RADIUS },
-        u_line_color: { value: new THREE.Color(0xffaa00) },
-        u_line_thickness: { value: 0.005 },
-        u_debug_mode: { value: false},
-      },
+  setupSphere() {
+    const sphereGeometry = new THREE.SphereGeometry(this.SPHERE_RADIUS, 64, 32);
+    const sphereMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0077ff,
+      wireframe: false,
+      metalness: 0.2,
+      roughness: 0.7,
     });
-
-    this.mainSphereMesh = new THREE.Mesh(sphereGeometry, shaderMaterial);
+    this.mainSphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
     this.scene.add(this.mainSphereMesh);
   }
 
@@ -107,10 +86,9 @@ setupSphere() {
     this.controls.maxDistance = this.SPHERE_RADIUS * 10;
   }
 
-  startAnimationLoop() {
+  setupAnimation() {
     const animate = () => {
-      // Store the frame ID so we can cancel it later
-      this.animationFrameId = requestAnimationFrame(animate);
+      requestAnimationFrame(animate);
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     };
@@ -118,15 +96,11 @@ setupSphere() {
   }
 
   setupResize(container) {
-    // Use an arrow function or bind `this` to ensure correct context
-    this.onResize = () => {
-        if (container) {
-            this.camera.aspect = container.clientWidth / container.clientHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(container.clientWidth, container.clientHeight);
-        }
-    };
-    window.addEventListener('resize', this.onResize);
+    window.addEventListener('resize', () => {
+      this.camera.aspect = container.clientWidth / container.clientHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(container.clientWidth, container.clientHeight);
+    });
   }
 
   setupRaycasting() {
@@ -145,30 +119,42 @@ setupSphere() {
       const intersects = raycaster.intersectObject(this.mainSphereMesh);
 
       if (intersects.length > 0 && this.onSphereClick) {
-        const point = intersects[0].point.clone();
-        point.normalize();
+        const point = intersects[0].point;
         this.onSphereClick(point.x, point.y, point.z);
       }
     });
   }
 
-  renderFeatures(vectorData) {
-    if (!vectorData || !this.mainSphereMesh || !this.lineTexture) {
-      return;
-    }
-    
-    const { vertex_data, segment_count } = vectorData;
+  clearVisualObjects() {
+    this.visualObjects.forEach(obj => this.scene.remove(obj));
+    this.visualObjects = [];
+  }
 
-    this.mainSphereMesh.material.uniforms.u_line_count.value = segment_count;
-    this.lineTexture.image.data.set(vertex_data);
-    this.lineTexture.needsUpdate = true;
+  renderPolygons(polygonsData) {
+    this.clearVisualObjects();
+
+    const pointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const pointGeometry = new THREE.SphereGeometry(0.1, 16, 8);
+
+    polygonsData.forEach(polygon => {
+      if (polygon.points) {
+        polygon.points.forEach(animatedPoint => {
+          if (animatedPoint.initial_position) {
+            const pos = animatedPoint.initial_position;
+            const pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
+            pointMesh.position.set(pos.x, pos.y, pos.z || 0);
+            this.scene.add(pointMesh);
+            this.visualObjects.push(pointMesh);
+          }
+        });
+      }
+    });
+
+    console.log(`Rendered ${this.visualObjects.length} points.`);
   }
 
   dispose() {
-    // Stop the animation loop
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-    }
+    this.clearVisualObjects();
     
     if (this.renderer) {
       this.renderer.dispose();
@@ -180,8 +166,6 @@ setupSphere() {
     }
     
     // Clean up event listeners
-    if (this.onResize) {
-      window.removeEventListener('resize', this.onResize);
-    }
+    window.removeEventListener('resize', this.setupResize);
   }
 }
