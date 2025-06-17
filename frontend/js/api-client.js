@@ -5,37 +5,6 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * Checks the current user's authentication status.
-   * @returns {Promise<object>} User data if logged in.
-   * @rejects {Error} If the user is not authenticated or on network error.
-   */
-  async getMe() {
-    const response = await fetch(`${this.baseUrl}/api/me`);
-    if (!response.ok) {
-      throw new Error('Not authenticated');
-    }
-    return response.json();
-  }
-
-  /**
-   * Fetches the list of animations for the currently logged-in user.
-   * @returns {Promise<Array<object>>} A list of animation metadata objects.
-   */
-  async getMyAnimations() {
-    const response = await fetch(`${this.baseUrl}/api/my_animations`);
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Failed to get error details');
-      throw new Error(`Failed to get animations (${response.status}): ${errorText}`);
-    }
-    return response.json();
-  }
-
-  /**
-   * Saves the animation data for the authenticated user.
-   * @param {Uint8Array} protobufData The animation data to save.
-   * @returns {Promise<object>} The result from the server, including the new animation ID.
-   */
   async saveAnimation(protobufData) {
     const response = await fetch(`${this.baseUrl}/api/save_animation`, {
       method: 'POST',
@@ -57,18 +26,12 @@ export class ApiClient {
     return response.json();
   }
 
-  /**
-   * Loads a specific animation owned by the authenticated user.
-   * @param {number} id The ID of the animation to load.
-   * @returns {Promise<Uint8Array>} The raw animation data.
-   */
   async loadAnimation(id) {
-    const numericId = parseInt(id, 10);
-    if (isNaN(numericId)) {
+    if (typeof id !== 'number' || isNaN(id)) {
       throw new Error('Invalid ID provided for loading');
     }
 
-    const response = await fetch(`${this.baseUrl}/api/load_animation/${numericId}`);
+    const response = await fetch(`${this.baseUrl}/api/load_animation/${id}`);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Failed to get error details');

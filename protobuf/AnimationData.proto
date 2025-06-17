@@ -1,81 +1,45 @@
 // klyja/protobuf/AnimationData.proto
 syntax = "proto3";
 
-package klyja.map_animation.v1;
+// Define a package name, ideally including a version
+package klyja.map_animation.v1; // Use project name and version
 
 // Represents a 3D point coordinate.
-// Unchanged: This is a good fundamental building block.
 message Point {
   float x = 1;
   float y = 2;
   optional float z = 3; // Optional Z coordinate
 }
 
-// Defines a single keyframe for a point's position.
-// Replaces the old 'Vector movements' concept for clearer animation.
-message PositionKeyframe {
-  int32 frame = 1;         // The frame number (or time) for this keyframe.
-  Point position = 2;      // The absolute position of the point at this frame.
-  // Optional: You could add interpolation hints here later if needed,
-  // e.g., enum InterpolationType { LINEAR = 0; BEZIER = 1; }
-  // InterpolationType interpolation_to_next = 3;
+// Represents a 3D movement vector.
+message Vector {
+  float dx = 1;
+  float dy = 2;
+  optional float dz = 3; // Optional Z vector component
 }
 
-// Describes the complete animation path for a single, identifiable point.
-// This used to be 'AnimatedPoint' but is now more focused on the path itself.
-message PointAnimationPath {
-  string point_id = 1;                      // Unique ID for this point.
-  // Initial position can be represented as the first keyframe (e.g., at frame 0 or 1).
-  repeated PositionKeyframe keyframes = 2;  // A series of positions over time.
+// Represents the trajectory of a single point.
+message AnimatedPoint {
+  string point_id = 1;          // Unique ID for the point
+  Point initial_position = 2; // Starting position
+  repeated Vector movements = 3;// Sequence of movement vectors
 }
 
-// Defines the structure of a Feature (which points it consists of and their order) at a specific frame.
-// This directly addresses your requirement for "snapshots of the order of the points over time and what points are present".
-message FeatureStructureSnapshot {
-  int32 frame = 1;                          // The frame number for this structural snapshot.
-  repeated string ordered_point_ids = 2;    // List of point_ids (from PointAnimationPath)
-                                            // that make up the feature at this frame, in order.
-                                            // An empty list could mean the feature is temporarily not visible
-                                            // or has no points at this frame, depending on interpretation.
-}
-
-// Enum to define the type of a feature.
-enum FeatureType {
-  FEATURE_TYPE_UNSPECIFIED = 0; // Default, should not be used.
-  POLYGON = 1;                  // A closed shape.
-  POLYLINE = 2;                 // An open path or line.
-}
-
-// Represents a "Feature" - a primary animatable element on the map.
-// This new message encapsulates your proposed structure.
-message Feature {
-  string feature_id = 1;         // Unique ID for this feature.
-  string name = 2;               // User-defined name for the feature.
-  FeatureType type = 3;          // Type of the feature (Polygon or Polyline).
-  
-  // Metadata for the feature's lifecycle (your point 3)
-  int32 appearance_frame = 4;    // The frame at which this feature first appears or becomes active.
-  int32 disappearance_frame = 5; // The frame after which this feature is no longer active/visible.
-                                 // A convention could be used if it lasts till the end (e.g., set to MapAnimation.total_frames or a special value like -1).
-
-  // Contains all animation paths for points that can belong to this feature (your point 1)
-  repeated PointAnimationPath point_animation_paths = 6;
-  
-  // Describes how the feature's structure (its list of points and their order) changes over time (your point 2)
-  repeated FeatureStructureSnapshot structure_snapshots = 7;
-  
-  map<string, string> properties = 8; // Optional key-value properties, similar to the old Polygon.
+// Represents a single polygon feature.
+message Polygon {
+  string polygon_id = 1;            // Unique ID for the polygon
+  repeated AnimatedPoint points = 2;// Vertices (potentially animated)
+  map<string, string> properties = 3; // Optional key-value properties
 }
 
 // Top-level message representing the entire saved map animation.
-// Updated to use the new 'Feature' message.
 message MapAnimation {
-  string animation_id = 1;     // Unique ID for the saved instance.
-  string name = 2;             // User-defined name for the animation.
-  int32 total_frames = 3;      // Total duration of the animation in frames.
-  repeated Feature features = 4; // All features in the animation (replaces 'polygons').
+  string animation_id = 1; // Unique ID for the saved instance (maybe UUID later)
+  string name = 2;         // User-defined name for the animation
+  int32 total_frames = 3;  // Duration/interpretation hint for movements
+  repeated Polygon polygons = 4; // All polygons in the animation
 
-  // Optional global metadata (unchanged from your original comments)
+  // Optional metadata can be added later
   // google.protobuf.Timestamp created_at = 5;
   // string description = 6;
 }

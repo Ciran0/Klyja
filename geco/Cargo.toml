@@ -1,34 +1,28 @@
+# klyja/geco/Cargo.toml
 [package]
 name = "geco"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib"] # Needed for WASM library
 
 [dependencies]
-wasm-bindgen = "0.2"
-uuid = { version = "1.4", features = ["v4", "js"] }
+wasm-bindgen = "0.2" # Core library for JS <-> Rust communication
 prost = "0.12"
-nalgebra = "0.33"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
-serde-wasm-bindgen = "0.6.5"
+uuid = { version = "1", features = ["v4", "wasm-bindgen"] }
+getrandom = { version = "0.2", features = ["js"] } # Explicitly enable "js" feature for wasm support
+
+# Optional: Add logging to the browser console from Rust/WASM
+# console_error_panic_hook = { version = "0.1", optional = true }
+# web-sys = { version = "0.3", features = ['console'], optional = true }
 
 [build-dependencies]
 prost-build = "0.12"
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
-js-sys = "0.3"
-assert_matches = "1.5"
-# Removed: backend = { path = "../backend", version = "0.1.0" }
-# Removed: chrono = { version = "0.4", features = ["serde"] }
-# (Add chrono back if other geco tests in src/lib_test.rs or tests/wasm_tests.rs directly use it
-# for geco's own logic testing, but it seems it was primarily for the removed backend model test)
-
-[profile.release]
-opt-level = "s" # Optimize for size in release builds
-
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = ["--enable-bulk-memory", "--enable-nontrapping-float-to-int", "-O"]
+wasm-bindgen-test = "0.3"  # For testing WASM code
+js-sys = "0.3"             # JavaScript interop utilities for testing
+assert_matches = "1.5"     # For more readable assertions
