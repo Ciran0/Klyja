@@ -11,7 +11,7 @@ use backend::{
     DbPool,
 };
 use bytes::Bytes;
-use common::{fixtures, TestDb};
+use common::test_db::{fixtures, TestDb};
 use prost::Message;
 use rstest::*;
 use std::collections::HashMap;

@@ -3,8 +3,8 @@ mod common;
 
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use backend::{auth, handlers, DbPool};
-use common::TestDb;
+use backend::{auth, DbPool};
+use common::test_db::TestDb;
 
 async fn create_test_app_with_auth(pool: DbPool) -> TestServer {
     let auth_routes = axum::Router::new()
