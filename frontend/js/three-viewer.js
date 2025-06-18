@@ -101,9 +101,9 @@ setupSphere() {
 
   setupControls() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    this.controls.enableDamping = false;
     this.controls.dampingFactor = 0.05;
-    this.controls.minDistance = this.SPHERE_RADIUS + 1;
+    this.controls.minDistance = this.SPHERE_RADIUS + 0.1;
     this.controls.maxDistance = this.SPHERE_RADIUS * 10;
   }
 
