@@ -78,6 +78,40 @@
                        style="width: 100%">
                 <hr>
                 <h3>Feature Management</h3>
+                <h4>Features in Animation</h4>
+                <ul id="feature-list"
+                    style="height: 100px;
+                           overflow-y: auto;
+                           border: 1px solid #ccc;
+                           padding: 5px;
+                           list-style-type: none;
+                           margin:0">
+                </ul>
+                <h4>Points in Active Feature</h4>
+                <ul id="point-list"
+                    style="height: 100px;
+                           overflow-y: auto;
+                           border: 1px solid #ccc;
+                           padding: 5px;
+                           list-style-type: none;
+                           margin:0">
+                </ul>
+                <p>
+                    Active Feature: <span id="active-feature-id-display">None</span>
+                </p>
+                <h4>Add to Active Feature</h4>
+                <label for="click-to-add-toggle" style="cursor: pointer;">
+                    <input type="checkbox" id="click-to-add-toggle">
+                    Click on sphere to add points
+                </label>
+                <hr style="margin: 5px 0;">
+                <label for="point-id-input">Point ID (for keyframing):</label>
+                <input type="text" id="point-id-input" placeholder="Select from list above">
+                <p>
+                    <em>Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z: N/A)</span></em>
+                </p>
+                <button id="add-keyframe-button">Add Keyframe to Selected Point</button>
+                <hr>
                 <p>
                     Active Feature ID: <span id="active-feature-id-display">None</span>
                 </p>

@@ -90,6 +90,7 @@ setupSphere() {
         u_line_count: { value: 0 },
         u_sphere_radius: { value: this.SPHERE_RADIUS },
         u_line_color: { value: new THREE.Color(0xffaa00) },
+        u_active_line_color: { value: new THREE.Color(0x00ffff) },
         u_line_thickness: { value: 0.005 },
         u_debug_mode: { value: false},
       },
@@ -101,9 +102,9 @@ setupSphere() {
 
   setupControls() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    this.controls.enableDamping = false;
     this.controls.dampingFactor = 0.05;
-    this.controls.minDistance = this.SPHERE_RADIUS + 1;
+    this.controls.minDistance = this.SPHERE_RADIUS + 0.1;
     this.controls.maxDistance = this.SPHERE_RADIUS * 10;
   }
 

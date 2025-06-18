@@ -132,9 +132,10 @@ describe('WasmManager', () => {
       manager.loadAnimationProtobuf(data);
       expect(mockGecoInstance.load_animation_protobuf).toHaveBeenCalledWith(data);
     });
+
     it('getRenderableLineSegmentsAtFrame should call gecoInstance', () => {
       const result = manager.getRenderableLineSegmentsAtFrame(10);
-      expect(mockGecoInstance.getRenderableLineSegmentsAtFrame).toHaveBeenCalledWith(10);
+      expect(mockGecoInstance.getRenderableLineSegmentsAtFrame).toHaveBeenCalledWith(10, null);
       expect(result).toEqual({ vertex_data: expect.any(Float32Array), segment_count: 0 });
     });
   });
