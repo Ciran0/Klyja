@@ -87,6 +87,28 @@ export class WasmManager {
     }
   }
 
+  // --- NEW METHODS FOR UI IMPROVEMENT ---
+
+  getFeatures() {
+    this.ensureInitialized();
+    // This will call the 'getFeatures' function exposed from Rust
+    // and return a JS array of {id, name} objects.
+    return this.gecoInstance.getFeatures();
+  }
+
+  getPointsForFeature(featureId) {
+    this.ensureInitialized();
+    // This will call the 'getPointsForFeature' function exposed from Rust
+    // and return a JS array of {id} objects for the given feature.
+    return this.gecoInstance.getPointsForFeature(featureId);
+  }
+
+  setActiveFeature(featureId) {
+    this.ensureInitialized();
+    // This will call the 'setActiveFeature' function exposed from Rust.
+    this.gecoInstance.setActiveFeature(featureId);
+  }
+
   // --- Data Retrieval ---
   getRenderableLineSegmentsAtFrame(frameNumber) {
     this.ensureInitialized();

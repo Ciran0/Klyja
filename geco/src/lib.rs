@@ -31,6 +31,17 @@ macro_rules! console_log {
     }
 }
 
+#[derive(Serialize)]
+pub struct GecoFeatureInfo {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct GecoPointInfo {
+    pub id: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct WasmVectorData {
     pub vertex_data: Vec<f32>, // A flat array of [x1, y1, z1, x2, y2, z2, ...]
@@ -215,6 +226,56 @@ impl Geco {
     #[wasm_bindgen(js_name = getActiveFeatureId)]
     pub fn get_active_feature_id(&self) -> Option<String> {
         self.active_feature_id.clone()
+    }
+
+    #[wasm_bindgen(js_name = getFeatures)]
+    pub fn get_features(&self) -> Result<JsValue, JsValue> {
+        let features_info: Vec<GecoFeatureInfo> = self
+            .animation_state
+            .features
+            .iter()
+            .map(|f| GecoFeatureInfo {
+                id: f.feature_id.clone(),
+                name: f.name.clone(),
+            })
+            .collect();
+        serde_wasm_bindgen::to_value(&features_info).map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen(js_name = getPointsForFeature)]
+    pub fn get_points_for_feature(&self, feature_id: String) -> Result<JsValue, JsValue> {
+        if let Some(feature) = self
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id)
+        {
+            let points_info: Vec<GecoPointInfo> = feature
+                .point_animation_paths
+                .iter()
+                .map(|p| GecoPointInfo {
+                    id: p.point_id.clone(),
+                })
+                .collect();
+            serde_wasm_bindgen::to_value(&points_info).map_err(|e| e.into())
+        } else {
+            Err(JsValue::from_str("Feature not found"))
+        }
+    }
+
+    #[wasm_bindgen(js_name = setActiveFeature)]
+    pub fn set_active_feature(&mut self, feature_id: String) -> Result<(), JsValue> {
+        if self
+            .animation_state
+            .features
+            .iter()
+            .any(|f| f.feature_id == feature_id)
+        {
+            self.active_feature_id = Some(feature_id);
+            Ok(())
+        } else {
+            Err(JsValue::from_str("Feature not found"))
+        }
     }
 
     pub fn set_total_frames(&mut self, total_frames: i32) {
