@@ -110,11 +110,11 @@ export class WasmManager {
   }
 
   // --- Data Retrieval ---
-  getRenderableLineSegmentsAtFrame(frameNumber) {
+  getRenderableLineSegmentsAtFrame(frameNumber, activeFeatureId = null) { // Add activeFeatureId parameter
     this.ensureInitialized();
     try {
-        // This returns a JsValue which will be automatically converted to a JS object
-        return this.gecoInstance.getRenderableLineSegmentsAtFrame(frameNumber);
+        // Pass the ID to the wasm function
+        return this.gecoInstance.getRenderableLineSegmentsAtFrame(frameNumber, activeFeatureId);
     } catch (e) {
         console.error("Error getting line segment data:", e);
         // Return a default empty state on error

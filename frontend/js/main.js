@@ -331,10 +331,12 @@ export class KlyjaApp {
             this.uiState.pointIdInput = ''; // Clear manual input
             this.updateStatus(`Active feature set to: ${featureId.slice(0, 12)}...`);
             await this.refreshPointList(featureId); // This calls syncUIToState
+            this.renderCurrentFrame(); // *** ADD THIS LINE to re-render with the new active color
         } catch(e) {
             this.updateStatus(`Error setting active feature: ${e.message}`);
         }
     }
+
 
     handleSelectPoint(pointId) {
         this.uiState.activePointId = pointId;
@@ -460,13 +462,19 @@ export class KlyjaApp {
             return;
         }
         try {
-            const vectorData = this.wasmManager.getRenderableLineSegmentsAtFrame(this.uiState.currentFrame);
+            // Pass the activeFeatureId from the uiState to the wasmManager
+            const vectorData = this.wasmManager.getRenderableLineSegmentsAtFrame(
+                this.uiState.currentFrame,
+                this.uiState.activeFeatureId 
+            );
             this.viewer.renderFeatures(vectorData);
         } catch (e) {
             console.error("Error during renderCurrentFrame:", e);
             this.updateStatus(`Render error: ${e.message || e}`);
         }
     }
+
+
 
     async saveAnimationWithUIUpdate() {
         if (!this.uiState.isAuthenticated) {

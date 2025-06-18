@@ -90,6 +90,7 @@ setupSphere() {
         u_line_count: { value: 0 },
         u_sphere_radius: { value: this.SPHERE_RADIUS },
         u_line_color: { value: new THREE.Color(0xffaa00) },
+        u_active_line_color: { value: new THREE.Color(0x00ffff) },
         u_line_thickness: { value: 0.005 },
         u_debug_mode: { value: false},
       },
