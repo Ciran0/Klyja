@@ -179,10 +179,14 @@ describe('KlyjaApp Integration (Feature Edition)', () => {
   describe('Timeline', () => {
     it('should update current frame and re-render on slider input', () => {
       const frameSlider = document.getElementById('frame-slider');
-      frameSlider.value = '25';
+      // Set the slider value
+      frameSlider.value = 25;
+      // Dispatch the event to trigger the handler
       frameSlider.dispatchEvent(new Event('input'));
       expect(app.uiState.currentFrame).toBe(25);
-      expect(mockWasmManagerInstance.getRenderableLineSegmentsAtFrame).toHaveBeenCalledWith(25);
+      // MODIFICATION: Use `toHaveBeenLastCalledWith` to check the final call,
+      // and expect the `null` second argument.
+      expect(mockWasmManagerInstance.getRenderableLineSegmentsAtFrame).toHaveBeenLastCalledWith(25, null);
     });
   });
 

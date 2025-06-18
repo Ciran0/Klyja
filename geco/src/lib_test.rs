@@ -42,7 +42,7 @@ mod feature_animation_tests {
             .unwrap(); // (0,-1,0)
 
         // Call the new function
-        let result_js_value = geco.get_renderable_line_segments_at_frame(0).unwrap();
+        let result_js_value = geco.get_renderable_line_segments_at_frame(0, None).unwrap();
         let result_data: WasmVectorData = serde_wasm_bindgen::from_value(result_js_value).unwrap();
 
         // Assertions
