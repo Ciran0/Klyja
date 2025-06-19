@@ -19,3 +19,7 @@ frontend/dist/
 coverage_reports
 Cargo.lock
 Cargo.lock
+
+
+#docs
+TFE-ANALYSIS.md
