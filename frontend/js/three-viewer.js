@@ -27,6 +27,7 @@ export class ThreeViewer {
     this.controls = null;
     this.mainSphereMesh = null;
     this.animationFrameId = null; // Holds the reference to the animation frame for cleanup.
+    this.selectionMarker = null; // Hols selection sphere mesh
 
     /**
      * A callback function that gets executed when the user clicks on the sphere.
@@ -50,6 +51,7 @@ export class ThreeViewer {
     this.setupRenderer(viewerContainer);
     this.setupLights();
     this.setupSphere(); // This sets up the main sphere with its custom shader material.
+    this.setupSelectionMarker();
     this.setupControls();
     this.startAnimationLoop();
     this.setupResize(viewerContainer);
@@ -231,6 +233,41 @@ export class ThreeViewer {
     this.mainSphereMesh.material.uniforms.u_line_count.value = segment_count;
     this.lineTexture.image.data.set(vertex_data);
     this.lineTexture.needsUpdate = true; // Crucial: tells Three.js to re-upload the texture to the GPU.
+  }
+
+  /**
+   * Creates the selection marker sphere.
+   */
+  setupSelectionMarker() {
+    const geometry = new THREE.SphereGeometry(this.SPHERE_RADIUS * 0.05, 16, 16); // A small sphere
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ffff, // A bright cyan color
+      transparent: true,
+      opacity: 0.7,    // Make it semi-transparent
+    });
+    this.selectionMarker = new THREE.Mesh(geometry, material);
+    this.selectionMarker.visible = false; // It should be hidden initially
+    this.scene.add(this.selectionMarker);
+  }
+
+  /**
+   * Updates the position of the selection marker and makes it visible.
+   * @param {THREE.Vector3} position The new position for the marker.
+   */
+  updateSelectionMarker(position) {
+    if (!this.selectionMarker) return;
+    // We multiply by 1.01 to place it just slightly above the main sphere's surface, preventing visual glitches.
+    this.selectionMarker.position.copy(position).multiplyScalar(this.SPHERE_RADIUS * 1.01);
+    this.selectionMarker.visible = true;
+  }
+
+  /**
+   * Hides the selection marker.
+   */
+  hideSelectionMarker() {
+    if (this.selectionMarker) {
+      this.selectionMarker.visible = false;
+    }
   }
 
   /**

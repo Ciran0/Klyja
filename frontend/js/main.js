@@ -1,4 +1,5 @@
 // frontend/js/main.js
+import * as THREE from 'three';
 import { ThreeViewer } from './three-viewer.js';
 import { WasmManager } from './wasm-manager.js';
 import { ApiClient } from './api-client.js';
@@ -37,6 +38,7 @@ export class KlyjaApp {
             activeFeatureId: null,      // The ID of the feature currently being edited
             activeFeaturePoints: [],    // List of points for the active feature
             activePointId: null,        // The ID of the point currently selected
+            activePointPosition:null,   // The position of the active point
             isClickToAddMode: false,    // Toggles whether clicking the sphere adds a point
             // Form input state
             featureNameInput: 'MyFeature',
@@ -161,10 +163,11 @@ export class KlyjaApp {
             }
         });
 
-        this.dom.frameSlider.addEventListener('input', (e) => {
+        this.dom.frameSlider.addEventListener('input', async (e) => { // Make the handler async
             this.uiState.currentFrame = parseInt(e.target.value, 10);
-            this.syncUIToState();
-            this.renderCurrentFrame();
+            this.renderCurrentFrame(); // Render the main lines first
+            await this.updateSelectionMarkerPosition(); // Then update the marker's position
+            this.syncUIToState(); // Finally, update text displays
         });
 
         // --- Feature & Point Creation/Modification ---
@@ -395,23 +398,13 @@ export class KlyjaApp {
             this.uiState.activeFeatureId = featureId;
             this.uiState.activePointId = null; // Deselect point when feature changes
             this.uiState.pointIdInput = '';    // Clear manual input
+            this.viewer.hideSelectionMarker();
             this.updateStatus(`Active feature set to: ${featureId.slice(0, 12)}...`);
             await this.refreshPointList(featureId);
             this.renderCurrentFrame(); // Re-render to apply the active feature highlight
         } catch (e) {
             this.updateStatus(`Error setting active feature: ${e.message}`);
         }
-    }
-
-    /**
-     * Handles the user clicking on a point in the list.
-     * @param {string} pointId The ID of the point to select.
-     */
-    handleSelectPoint(pointId) {
-        this.uiState.activePointId = pointId;
-        this.uiState.pointIdInput = pointId; // Also populate the text input
-        this.updateStatus(`Selected point: ${pointId.slice(0, 12)}...`);
-        this.syncUIToState();
     }
 
     /**
@@ -499,6 +492,53 @@ export class KlyjaApp {
         this.syncUIToState();
     }
 
+
+    /**
+     * Handles the user clicking on a point in the list.
+     * It sets the point as active, fetches its current position, and shows the selection marker.
+     * @param {string} pointId The ID of the point to select.
+     */
+    async handleSelectPoint(pointId) {
+        this.uiState.activePointId = pointId;
+        this.uiState.pointIdInput = pointId;
+        this.updateStatus(`Selected point: ${pointId.slice(0, 12)}...`);
+        await this.updateSelectionMarkerPosition(); // Use a new helper function to update the marker
+        this.syncUIToState();
+    }
+
+    /**
+     * Helper function to calculate the active point's position and update the viewer.
+     */
+    async updateSelectionMarkerPosition() {
+        if (this.uiState.activePointId && this.uiState.activeFeatureId && this.wasmManager?.initialized) {
+            try {
+                // Get the point's position from our new WASM function
+                const pos = await this.wasmManager.getInterpolatedPointPosition(
+                    this.uiState.activeFeatureId,
+                    this.uiState.activePointId,
+                    this.uiState.currentFrame
+                );
+
+                if (pos) {
+                    this.uiState.activePointPosition = pos;
+                    const markerPosition = new THREE.Vector3(pos.x, pos.y, pos.z);
+                    this.viewer.updateSelectionMarker(markerPosition);
+                } else {
+                    // If the point has no position on this frame, hide the marker
+                    this.uiState.activePointPosition = null;
+                    this.viewer.hideSelectionMarker();
+                }
+            } catch (e) {
+                console.error("Error updating selection marker:", e);
+                this.updateStatus(`Error showing point: ${e.message}`);
+                this.viewer.hideSelectionMarker();
+            }
+        } else {
+            // If there's no active point, hide the marker
+            this.viewer.hideSelectionMarker();
+        }
+    }
+
     /**
      * Handles the "Load" button click.
      * It fetches the animation data from the backend, loads it into the WASM module,
@@ -526,6 +566,7 @@ export class KlyjaApp {
             this.uiState.currentFrame = 0;
             this.uiState.activeFeatureId = null;
             this.uiState.activePointId = null;
+            this.viewer.hideSelectionMarker();
             // 4. Refresh UI lists and re-render
             await this.refreshFeatureList();
             await this.refreshPointList(null);

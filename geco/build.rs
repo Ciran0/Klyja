@@ -11,6 +11,8 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     prost_build::Config::new()
+        // add necesary type attributes to prost generated builds
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         // Specify the output directory for generated code
         .out_dir(&out_dir) // Use OUT_DIR
         // Compile the .proto file

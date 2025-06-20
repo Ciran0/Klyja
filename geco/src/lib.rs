@@ -716,6 +716,40 @@ impl Geco {
 
         serde_wasm_bindgen::to_value(&vector_data).map_err(|e| e.into())
     }
+
+    /// Gets the interpolated position of a single point on a given frame.
+    ///
+    /// # Arguments
+    /// * `feature_id` - The ID of the feature containing the point.
+    /// * `point_id` - The ID of the point to find.
+    /// * `frame` - The frame number at which to find the position.
+    /// * The interpolated `Point` as a JsValue, or `JsValue::NULL` if not found.
+    #[wasm_bindgen(js_name = getInterpolatedPointPosition)]
+    pub fn get_interpolated_point_position(
+        &self,
+        feature_id: String,
+        point_id: String,
+        frame: i32,
+    ) -> Result<JsValue, JsValue> {
+        let feature = self
+            .animation_state
+            .features
+            .iter()
+            .find(|f| f.feature_id == feature_id)
+            .ok_or_else(|| JsValue::from_str("Feature not found"))?;
+
+        let point_path = feature
+            .point_animation_paths
+            .iter()
+            .find(|p| p.point_id == point_id)
+            .ok_or_else(|| JsValue::from_str("Point not found in feature"))?;
+
+        if let Some(position) = interpolate_point_position(point_path, frame) {
+            serde_wasm_bindgen::to_value(&position).map_err(|e| e.into())
+        } else {
+            Ok(JsValue::NULL)
+        }
+    }
 }
 
 // This line is needed for the tests module to be recognized

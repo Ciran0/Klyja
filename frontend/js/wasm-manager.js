@@ -87,13 +87,22 @@ export class WasmManager {
     }
   }
 
-  // --- NEW METHODS FOR UI IMPROVEMENT ---
-
   getFeatures() {
     this.ensureInitialized();
     // This will call the 'getFeatures' function exposed from Rust
     // and return a JS array of {id, name} objects.
     return this.gecoInstance.getFeatures();
+  }
+
+  getInterpolatedPointPosition(featureId, pointId, frame) {
+    this.ensureInitialized();
+    try {
+      // This calls the Rust function we just added.
+      return this.gecoInstance.getInterpolatedPointPosition(featureId, pointId, frame);
+    } catch (e) {
+      console.error(`Error getting interpolated position for point ${pointId}:`, e);
+      return null;
+    }
   }
 
   getPointsForFeature(featureId) {
