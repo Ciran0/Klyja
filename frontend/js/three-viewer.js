@@ -150,6 +150,7 @@ export class ThreeViewer {
    */
   setupControls() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enablePan = false;
     this.controls.enableDamping = false;
     this.controls.dampingFactor = 0.05;
     this.controls.minDistance = this.SPHERE_RADIUS + 0.1;
