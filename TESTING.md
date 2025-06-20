@@ -1,141 +1,166 @@
 # Testing in Klyja
 
-This document explains how to run tests for the Klyja project.
+This document provides a comprehensive guide to running the tests for the Klyja project. The project is configured with a robust testing strategy that covers all three of its core components: the Rust **Backend**, the **Frontend** application, and the Rust-to-WASM **Geco** module.
 
-## Running Tests
+## Prerequisites
 
-To run all tests in the workspace:
+Before running any tests, ensure you have the following tools installed and configured:
+* **Rust Toolchain:** Including `cargo`.
+* **Node.js:** Version 20.x or higher, with `npm`.
+* **wasm-pack:** For building and testing the WebAssembly module.
+* **Docker & Docker Compose:** Required for running the PostgreSQL test database environment.
 
+## Full Test Suite Execution
+
+To run the entire test suite as it is executed in the CI/CD pipeline, you first need to start the test database and install frontend dependencies.
+
+**1. Start the Test Database:**
 ```bash
-# From the project root
-cargo test --workspace
+docker-compose up -d
 ```
 
-To run tests for a specific crate:
-
+**2. Install Frontend Dependencies:**
 ```bash
-# For backend tests
-cd backend
-cargo test
-
-# For geco tests
-cd geco
-cargo test
+npm install --prefix frontend
 ```
 
-To run tests with output:
+**3. Run All Tests and Generate Coverage:**
+
+The most comprehensive way to run all tests is to execute the scripts for each component sequentially, which also generates code coverage reports.
 
 ```bash
-cargo test -- --nocapture
+#!/bin/bash
+set -e # Exit immediately if a command exits with a non-zero status.
+
+echo "--- Running Backend Tests & Coverage ---"
+# Uses cargo-tarpaulin to generate a Cobertura XML coverage report
+cargo tarpaulin --packages backend --engine Llvm --out Xml --output-dir target/coverage/backend -- --test-threads=1
+
+echo "--- Running Geco (WASM) Lib Tests & Coverage ---"
+# Tests the Rust library logic of the WASM module
+cargo tarpaulin --packages geco --engine Llvm --out Xml --output-dir target/coverage/geco --lib -- --test-threads=1
+
+echo "--- Running Geco (WASM) Headless Browser Tests ---"
+# Tests the WASM module's browser integration
+(cd geco && wasm-pack test --headless --firefox)
+
+echo "--- Running Frontend Tests & Coverage ---"
+npm run test:coverage --prefix frontend
+
+echo "--- All tests completed successfully! ---"
 ```
 
-## Test Structure
+## Component-Specific Testing
 
-### Backend Tests
+You can also run tests for each part of the application individually.
 
-The backend tests are organized as follows:
+### 1. Backend (`backend/`)
 
-- **Unit Tests**: Located in `src/lib.rs` inside the `tests` module
-- **Integration Tests**: Located in `tests/basic_test.rs`
+The backend is a Rust crate tested with a combination of unit and integration tests. The integration tests are particularly robust, as they automatically create and tear down a temporary, isolated PostgreSQL database for each test run.
 
-Current test coverage:
-- Error handling tests for `AppError`
-- Data model serialization tests
-- Protocol buffer mapping tests
+* **Key Libraries:** `axum-test`, `rstest`, `diesel`, `tokio-test`, `tempfile`.
+* **Test Database:** The test setup in `backend/tests/common/test_db.rs` connects to the running Docker container and programmatically creates a new database for tests, ensuring a clean state.
 
-### WebAssembly (Geco) Tests
+**Running Tests:**
+```bash
+# Run all backend unit and integration tests
+cargo test -p backend
+```
 
-The WebAssembly tests are organized as follows:
+**Generating Coverage:**
+The `cargo-tarpaulin` tool is used to generate test coverage reports.
+```bash
+cargo tarpaulin --packages backend --engine Llvm --out Html --output-dir target/coverage/backend -- --test-threads=1
+# An HTML report will be available at: target/coverage/backend/tarpaulin-report.html
+```
 
-- **Unit Tests**: Located in `src/lib_test.rs`
-- **Basic Tests**: Located in `tests/basic_test.rs`
-- **WASM Tests**: Located in `tests/wasm_tests.rs` - these tests require wasm-pack
+**What's Tested:**
+* **API Endpoints:** Full request/response cycle for `/api/save_animation`, `/api/load_animation`, and user auth endpoints (`/api/me`, `/api/my_animations`).
+* **Database Logic:** CRUD operations and data integrity.
+* **Authentication & Authorization:** Secure session management and ensuring users can only access their own data.
+* **Error Handling:** Testing for correct HTTP status codes on failure (e.g., `401 Unauthorized`, `404 Not Found`).
+* **Protobuf Serialization:** Correctly handling binary data from the frontend.
 
-Current test coverage:
-- Tests for SimplePoint, SimpleAnimatedPoint, and SimplePolygon conversion
-- Protocol buffer serialization/deserialization
-- MapAnimation structure tests
+### 2. Geometry Core / WASM (`geco/`)
+
+The `geco` crate has two distinct types of tests: standard Rust unit tests for the core logic and WASM-specific tests that run in a headless browser to ensure browser compatibility.
+
+* **Key Libraries:** `wasm-bindgen-test`, `js-sys`.
+
+**Running Tests:**
+
+1.  **Rust Unit Tests (command line):**
+    ```bash
+    # This tests the pure Rust logic, like the interpolation functions.
+    cargo test -p geco --lib
+    ```
+
+2.  **WebAssembly Browser Tests:**
+    This command compiles the crate to WASM and runs tests annotated with `#[wasm_bindgen_test]` in a real browser environment.
+    ```bash
+    # Run tests in a headless Firefox instance
+    (cd geco && wasm-pack test --headless --firefox)
+
+    # You can also run in other installed browsers:
+    # wasm-pack test --chrome
+    # wasm-pack test --safari
+    ```
+
+**Generating Coverage:**
+Coverage is generated from the Rust unit tests.
+```bash
+cargo tarpaulin --packages geco --engine Llvm --out Html --output-dir target/coverage/geco --lib -- --test-threads=1
+# An HTML report will be available at: target/coverage/geco/tarpaulin-report.html
+```
+
+**What's Tested:**
+* Core data structures (`MapAnimation`, `Feature`, `Point`).
+* Spherical linear interpolation (`slerp`) logic.
+* State management functions exposed to JavaScript (`create_feature`, `add_point`, etc.).
+* Protobuf serialization/deserialization cycle.
+* Error handling for invalid operations (e.g., adding a duplicate point).
+
+### 3. Frontend (`frontend/`)
+
+The frontend application is tested using **Vitest**, a modern and fast testing framework. Tests run in a simulated DOM environment (`happy-dom`) and include unit tests for individual modules and integration tests for the `KlyjaApp` class.
+
+* **Key Libraries:** `vitest`, `@vitest/coverage-v8`, `@testing-library/dom`.
+* **Setup:** Mocks for `three.js`, the WASM module, and the `ApiClient` are configured in `frontend/tests/setup.js` to isolate components during testing.
+
+**Running Tests:**
+
+```bash
+# Run all frontend tests once
+npm test --prefix frontend
+
+# Run tests in watch mode for active development
+npm run test:watch --prefix frontend
+
+# Run tests with the Vitest UI for an interactive experience
+npm run test:ui --prefix frontend
+```
+
+**Generating Coverage:**
+```bash
+npm run test:coverage --prefix frontend
+# An HTML report will be available at: frontend/coverage/index.html
+```
+
+**What's Tested:**
+* **UI State Management:** `KlyjaApp` logic for handling user input and updating the UI.
+* **API Client:** Mocking `fetch` to test `ApiClient`'s ability to correctly save and load data.
+* **WASM Manager:** Verifying that the `WasmManager` class calls the correct underlying WASM functions.
+* **User Interactions:** Simulating button clicks and inputs to ensure the application state changes as expected.
+* **Rendering Logic:** Ensuring the `ThreeViewer` is called with the correct data from the WASM module.
 
 ## Future Test Areas
 
-### Integration Tests
+While the current test coverage is comprehensive, the following areas could be enhanced in the future:
 
-Integration tests for the backend are currently limited. Future extensions could include:
-
-- Database interaction tests with a test database
-- HTTP API tests using axum-test for the handlers
-- End-to-end flow tests
-
-### Performance Tests
-
-Performance tests are not currently implemented. Future tests could include:
-
-- Protocol buffer encoding/decoding performance
-- Database query performance
-- API endpoint performance
-
-### Frontend Tests
-
-Frontend tests have not been implemented yet. Future tests could include:
-
-- JavaScript unit tests
-- DOM manipulation tests
-- WebAssembly integration tests
-
-## Test Dependencies
-
-### Backend Test Dependencies
-
-```toml
-[dev-dependencies]
-tokio-test = "0.4"          # Utilities for testing async code
-axum-test = "14.0"          # Testing utilities for Axum
-mockall = "0.12"            # For creating mock objects
-diesel-async = { version = "0.4", features = ["postgres"] } # For testing with async DB operations
-assert_matches = "1.5"      # More ergonomic assertions
-uuid = { version = "1.6", features = ["v4"] } # For generating test IDs
-rand = "0.8"                # For generating random test data
-rstest = "0.18"             # Parameterized tests
-```
-
-### Geco Test Dependencies
-
-```toml
-[dev-dependencies]
-wasm-bindgen-test = "0.3"  # For testing WASM code
-js-sys = "0.3"             # JavaScript interop utilities for testing
-assert_matches = "1.5"     # For more readable assertions
-```
-
-## Test Environment Requirements
-
-- For backend tests: A PostgreSQL database (use the one from docker-compose)
-- For WASM tests: Node.js and wasm-pack installed for browser-based tests
-
-## Running Specific Test Types
-
-### Running WASM Tests in the Browser
-
-```bash
-cd geco
-wasm-pack test --chrome  # or --firefox, --safari
-```
-
-### Running Only Unit Tests
-
-```bash
-cargo test --lib
-```
-
-### Running Only Integration Tests
-
-```bash
-cargo test --test '*'
-```
-
-## Test Strategy
-
-- **Unit Tests**: Test individual functions and methods in isolation
-- **Integration Tests**: Test services and other components working together
-- **Browser Tests**: Test WebAssembly functionality in a browser environment
-- **Fuzz Tests**: Could be added in the future to test handling of invalid inputs
+* **End-to-End (E2E) Tests:** A suite that runs the entire application stack (backend, frontend, and database) and simulates real user workflows using a browser automation tool like Playwright or Cypress.
+* **Performance Tests:**
+    * Benchmarking key backend API endpoints under load.
+    * Measuring the performance of Protobuf serialization/deserialization with very large animation datasets.
+    * Testing the frontend rendering framerate with a high number of polygons and points.
+* **Fuzz Testing:** Providing malformed or random Protobuf data to the backend and WASM load functions to ensure they handle unexpected input gracefully without panicking.
+* **Visual Regression Testing:** For the `ThreeViewer`, capturing screenshots of the rendered output and comparing them against baseline images to automatically detect unintended visual changes.

@@ -18,10 +18,13 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
+    /// Exposes the JavaScript `console.log` function to the WASM module for debugging.
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 }
 
+/// A macro for logging messages to the browser's developer console (in WASM builds)
+/// or to standard output (in native builds).
 macro_rules! console_log {
     ($($t:tt)*) => {
         #[cfg(target_arch = "wasm32")]
@@ -31,23 +34,41 @@ macro_rules! console_log {
     }
 }
 
+/// A serializable summary of a Feature, designed to be sent to JavaScript.
 #[derive(Serialize)]
 pub struct GecoFeatureInfo {
     pub id: String,
     pub name: String,
 }
 
+/// A serializable summary of a Point, designed to be sent to JavaScript.
 #[derive(Serialize)]
 pub struct GecoPointInfo {
     pub id: String,
 }
 
+/// The data structure returned to JavaScript containing all vertex data for a single frame.
+/// This is consumed directly by the Three.js renderer.
 #[derive(Serialize, Deserialize)]
 pub struct WasmVectorData {
-    pub vertex_data: Vec<f32>, // A flat array of [x1, y1, z1, x2, y2, z2, ...]
-    pub segment_count: u32,    // The number of line segments in the array
+    /// A flat array of vertex data structured as [x1, y1, z1, w1, x2, y2, z2, w2, ...].
+    /// The `w` component is a tag used by the shader (e.g., to highlight the active feature).
+    pub vertex_data: Vec<f32>,
+    /// The total number of line segments in the `vertex_data` array.
+    pub segment_count: u32,
 }
 
+/// Performs Spherical Linear Interpolation (slerp) for a point's position along its animation path.
+/// Given a path of keyframes, it calculates the interpolated position on the surface of a unit sphere
+/// for a specific frame.
+///
+/// # Arguments
+/// * `path` - A reference to the `PointAnimationPath` containing the keyframes.
+/// * `current_frame` - The frame number for which to calculate the position.
+///
+/// # Returns
+/// * `Some(Point)` containing the interpolated (x, y, z) coordinates if successful.
+/// * `None` if the path has no keyframes or the keyframes lack position data.
 pub(crate) fn interpolate_point_position(
     path: &PointAnimationPath,
     current_frame: i32,
@@ -60,6 +81,7 @@ pub(crate) fn interpolate_point_position(
     let mut prev_kf: Option<&PositionKeyframe> = None;
     let mut next_kf: Option<&PositionKeyframe> = None;
 
+    // Find the keyframes immediately preceding and succeeding the current frame.
     for kf in keyframes {
         if kf.frame <= current_frame {
             prev_kf = Some(kf);
@@ -71,14 +93,14 @@ pub(crate) fn interpolate_point_position(
     }
 
     match (prev_kf, next_kf) {
+        // If we are past the last keyframe, hold the last position.
         (Some(pkf), None) => pkf.position.clone(),
+        // If we are before the first keyframe, hold the first position.
         (None, Some(nkf)) => nkf.position.clone(),
-        (None, None) => None,
+        (None, None) => None, // Should not happen if keyframes are not empty.
         (Some(pkf), Some(nkf)) => {
-            if pkf.frame == nkf.frame {
-                return pkf.position.clone();
-            }
-            if pkf.frame == current_frame {
+            // If keyframes are at the same frame, or we are exactly on a keyframe, return that position.
+            if pkf.frame == nkf.frame || pkf.frame == current_frame {
                 return pkf.position.clone();
             }
             if nkf.frame == current_frame {
@@ -91,6 +113,7 @@ pub(crate) fn interpolate_point_position(
             let p0_vec = Vector3::new(p0_proto.x, p0_proto.y, p0_proto.z.unwrap_or(0.0f32));
             let p1_vec = Vector3::new(p1_proto.x, p1_proto.y, p1_proto.z.unwrap_or(0.0f32));
 
+            // Calculate the interpolation factor `t` (from 0.0 to 1.0).
             let t_total = (nkf.frame - pkf.frame) as f32;
             let t_current = (current_frame - pkf.frame) as f32;
 
@@ -99,15 +122,22 @@ pub(crate) fn interpolate_point_position(
             }
             let t = t_current / t_total;
 
+            // Normalize vectors to ensure they are on the unit sphere for slerp.
             let p0_unit = Unit::new_normalize(p0_vec);
             let p1_unit = Unit::new_normalize(p1_vec);
 
             let dot = p0_unit.dot(&p1_unit);
             let interpolated_vec;
 
+            // --- Edge Case Handling for Slerp ---
+            // 1. If vectors are almost identical, linear interpolation is fine.
             if (dot - 1.0).abs() < 1e-5 {
                 interpolated_vec = p0_unit.into_inner();
-            } else if (dot + 1.0).abs() < 1e-5 {
+            }
+            // 2. If vectors are antipodal (opposite sides of the sphere), slerp is unstable.
+            //    We must pick an arbitrary axis of rotation perpendicular to the vector and rotate around it.
+            else if (dot + 1.0).abs() < 1e-5 {
+                // Find a suitable perpendicular vector to use for the rotation axis.
                 let mut temp_candidate_for_cross = Vector3::x_axis().into_inner();
                 if p0_unit.cross(&temp_candidate_for_cross).magnitude_squared() < 1e-6 {
                     temp_candidate_for_cross = Vector3::y_axis().into_inner();
@@ -118,6 +148,7 @@ pub(crate) fn interpolate_point_position(
 
                 let rotation_axis_vec = p0_unit.cross(&temp_candidate_for_cross);
 
+                // Perform the rotation by `t * PI` radians.
                 if rotation_axis_vec.magnitude_squared() < 1e-5 {
                     let axis_for_rotation = if p0_unit.z.abs() > 0.99 {
                         Unit::new_normalize(Vector3::x_axis().into_inner())
@@ -139,7 +170,9 @@ pub(crate) fn interpolate_point_position(
                     );
                     interpolated_vec = rot * p0_unit.into_inner();
                 }
-            } else {
+            }
+            // 3. Standard case: perform the spherical linear interpolation.
+            else {
                 interpolated_vec = p0_unit.slerp(&p1_unit, t).into_inner();
             }
 
@@ -152,6 +185,7 @@ pub(crate) fn interpolate_point_position(
     }
 }
 
+/// Internal test state representation, used for assertion in tests.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TestFeatureState {
     pub name: String,
@@ -168,14 +202,21 @@ pub struct TestAnimationState {
     pub features: Vec<TestFeatureState>,
 }
 
+/// The main Geco struct, representing the state of the animation editor in WASM.
+/// This is the primary entry point for all interactions from JavaScript.
 #[wasm_bindgen]
 pub struct Geco {
+    /// Holds the complete, serializable state of the animation, including all features,
+    /// points, and keyframes. This is what gets saved to the backend.
     animation_state: MapAnimation,
+    /// Holds the ID of the feature currently selected in the UI for editing.
+    /// This is purely UI state and is not part of the saved animation data.
     active_feature_id: Option<String>,
 }
 
 #[wasm_bindgen]
 impl Geco {
+    /// Creates a new, empty Geco animation editor instance.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         console_log!("Geco::new() called - Feature Edition");
@@ -190,7 +231,7 @@ impl Geco {
         }
     }
 
-    //test only helper function
+    /// [Internal] Gets the full internal state of the Geco object for testing purposes.
     #[doc(hidden)]
     #[wasm_bindgen(js_name = getStateForTesting)]
     pub fn get_state_for_testing(&self) -> Result<JsValue, JsValue> {
@@ -223,11 +264,13 @@ impl Geco {
         serde_wasm_bindgen::to_value(&state).map_err(|e| e.into())
     }
 
+    /// Gets the ID of the currently active feature.
     #[wasm_bindgen(js_name = getActiveFeatureId)]
     pub fn get_active_feature_id(&self) -> Option<String> {
         self.active_feature_id.clone()
     }
 
+    /// Returns a list of all features in the animation as an array of `{id, name}` objects.
     #[wasm_bindgen(js_name = getFeatures)]
     pub fn get_features(&self) -> Result<JsValue, JsValue> {
         let features_info: Vec<GecoFeatureInfo> = self
@@ -242,6 +285,7 @@ impl Geco {
         serde_wasm_bindgen::to_value(&features_info).map_err(|e| e.into())
     }
 
+    /// Returns a list of all points for a given feature ID as an array of `{id}` objects.
     #[wasm_bindgen(js_name = getPointsForFeature)]
     pub fn get_points_for_feature(&self, feature_id: String) -> Result<JsValue, JsValue> {
         if let Some(feature) = self
@@ -263,6 +307,7 @@ impl Geco {
         }
     }
 
+    /// Sets the currently active feature for editing.
     #[wasm_bindgen(js_name = setActiveFeature)]
     pub fn set_active_feature(&mut self, feature_id: String) -> Result<(), JsValue> {
         if self
@@ -278,29 +323,35 @@ impl Geco {
         }
     }
 
+    /// Sets the total number of frames for the entire animation.
     pub fn set_total_frames(&mut self, total_frames: i32) {
         if total_frames > 0 {
             self.animation_state.total_frames = total_frames;
         }
     }
 
+    /// Gets the total number of frames for the animation.
     pub fn get_total_frames(&self) -> i32 {
         self.animation_state.total_frames
     }
 
+    /// Gets the current name of the animation.
     pub fn get_animation_name(&self) -> String {
         self.animation_state.name.clone()
     }
 
+    /// Sets the name of the animation.
     pub fn set_animation_name(&mut self, name: String) {
         self.animation_state.name = name;
     }
 
+    /// Serializes the entire animation state into a Protobuf byte vector.
     pub fn get_animation_protobuf(&self) -> Vec<u8> {
         use prost::Message;
         self.animation_state.encode_to_vec()
     }
 
+    /// Deserializes a Protobuf byte vector to replace the current animation state.
     pub fn load_animation_protobuf(&mut self, data: &[u8]) -> Result<(), JsValue> {
         use prost::Message;
         match MapAnimation::decode(data) {
@@ -326,6 +377,15 @@ impl Geco {
         }
     }
 
+    /// Creates a new, empty feature and adds it to the animation.
+    ///
+    /// # Arguments
+    /// * `name` - The display name of the feature.
+    /// * `feature_type_val` - The type of feature (1 for Polygon, 2 for Polyline).
+    /// * `appearance_frame` - The frame on which the feature first becomes visible.
+    /// * `disappearance_frame` - The frame on which the feature becomes invisible.
+    /// # Returns
+    /// * The unique ID of the newly created feature.
     pub fn create_feature(
         &mut self,
         name: String,
@@ -340,7 +400,8 @@ impl Geco {
             _ => return Err(JsValue::from_str("Invalid feature type value")),
         };
 
-        // Create an initial empty snapshot at the appearance frame
+        // A feature needs an initial structural snapshot to exist.
+        // This snapshot defines the order of its points, which is empty at creation.
         let initial_snapshot = FeatureStructureSnapshot {
             frame: appearance_frame.max(0), // Ensure frame is not negative
             ordered_point_ids: vec![],      // Empty points initially
@@ -366,6 +427,17 @@ impl Geco {
         Ok(feature_id)
     }
 
+    /// Adds a new point to the currently active feature. This involves creating a new
+    /// animation path for the point and updating the feature's structure snapshot.
+    ///
+    /// The snapshot logic is subtle: if a snapshot already exists at `initial_frame`, the point is
+    /// added to it. Otherwise, a new snapshot is created, inheriting the structure from the
+    /// most recent previous snapshot, and the new point is added to that.
+    ///
+    /// # Arguments
+    /// * `point_id_str` - A specific ID for the point, or an empty string to generate one.
+    /// * `initial_frame` - The frame where the point is first added. This is also the frame for its first keyframe and its inclusion in a structure snapshot.
+    /// * `x`, `y`, `z` - The initial coordinates of the point (will be normalized to the unit sphere).
     pub fn add_point_to_active_feature(
         &mut self,
         point_id_str: String,
@@ -402,16 +474,18 @@ impl Geco {
             )));
         }
 
+        // Normalize coordinates to place the point on the unit sphere's surface.
         let z_val = z.unwrap_or(0.0);
         let mut magnitude = (x * x + y * y + z_val * z_val).sqrt();
         if magnitude == 0.0 {
             console_log!("Warning: Attempted to add point at origin. Defaulting magnitude to 1");
-            magnitude = 1.0; // Avoid division by zero, ensure point is on unit sphere surface
+            magnitude = 1.0;
         }
         let norm_x = x / magnitude;
         let norm_y = y / magnitude;
         let norm_z = z_val / magnitude;
 
+        // Create the first keyframe for the point's animation path.
         let initial_keyframe = PositionKeyframe {
             frame: initial_frame,
             position: Some(Point {
@@ -426,14 +500,12 @@ impl Geco {
         };
         feature.point_animation_paths.push(point_path);
 
-        // Use initial_frame for the snapshot where the point is added.
-        // If a snapshot at this frame exists, add to it. Otherwise, create a new one.
-        // Important: This needs to handle existing points in that snapshot.
-
+        // --- Manage Feature Structure Snapshot ---
+        // Find if a snapshot already exists at this frame.
         let mut snapshot_exists_at_frame = false;
         for snapshot in feature.structure_snapshots.iter_mut() {
             if snapshot.frame == initial_frame {
-                // Add to existing snapshot if it doesn't already contain the point
+                // Add point to the existing snapshot.
                 if !snapshot.ordered_point_ids.contains(&point_id) {
                     snapshot.ordered_point_ids.push(point_id.clone());
                 }
@@ -443,7 +515,8 @@ impl Geco {
         }
 
         if !snapshot_exists_at_frame {
-            // Create a new snapshot. If there was a previous snapshot, inherit its points.
+            // If no snapshot exists, create a new one.
+            // Inherit the point order from the most recent snapshot *before* this frame.
             let previous_points = feature
                 .structure_snapshots
                 .iter()
@@ -463,7 +536,7 @@ impl Geco {
             });
         }
 
-        // Ensure snapshots are sorted by frame after modification
+        // Ensure snapshots are always sorted by frame.
         feature.structure_snapshots.sort_by_key(|ss| ss.frame);
 
         console_log!(
@@ -475,6 +548,7 @@ impl Geco {
         Ok(point_id)
     }
 
+    /// Adds a new position keyframe to a specific point's animation path.
     pub fn add_position_keyframe_to_point(
         &mut self,
         feature_id: String,
@@ -496,6 +570,7 @@ impl Geco {
             .find(|pap| pap.point_id == point_id)
             .ok_or_else(|| JsValue::from_str("Point not found in feature"))?;
 
+        // Normalize coordinates.
         let z_val = z.unwrap_or(0.0);
         let mut magnitude = (x * x + y * y + z_val * z_val).sqrt();
         if magnitude == 0.0 {
@@ -517,7 +592,7 @@ impl Geco {
             }),
         };
         point_path.keyframes.push(new_keyframe);
-        point_path.keyframes.sort_by_key(|kf| kf.frame); // Keep keyframes sorted
+        point_path.keyframes.sort_by_key(|kf| kf.frame); // Keep keyframes sorted chronologically.
         console_log!(
             "Added keyframe to point '{}' in feature '{}' at frame {}",
             point_id,
@@ -527,11 +602,21 @@ impl Geco {
         Ok(())
     }
 
+    /// Calculates and returns the line segments that should be rendered for a given frame.
+    /// This is the primary function called by the frontend on each frame of the animation timeline.
+    ///
+    /// # Logic
+    /// 1. Iterates through all features.
+    /// 2. Ignores features that are not visible at `frame_number`.
+    /// 3. Finds the correct `FeatureStructureSnapshot` for the given frame.
+    /// 4. Interpolates the position of every point listed in that snapshot.
+    /// 5. Constructs line segments based on the `ordered_point_ids` in the snapshot.
+    /// 6. Packages all vertex data into a single flat array for efficient transfer to the GPU.
+    /// 7. Tags the `w` component of each vertex: `2.0` for the active feature, `1.0` otherwise.
     #[wasm_bindgen(js_name = getRenderableLineSegmentsAtFrame)]
     pub fn get_renderable_line_segments_at_frame(
         &self,
         frame_number: i32,
-        // Add this new parameter. Use Option<String> to handle cases where nothing is active.
         active_feature_id: Option<String>,
     ) -> Result<JsValue, JsValue> {
         let mut vertex_data = Vec::<f32>::new();
@@ -540,19 +625,20 @@ impl Geco {
         console_log!("--- New Frame {} ---", frame_number);
 
         for feature in &self.animation_state.features {
+            // Skip features that are not visible on this frame.
             if frame_number < feature.appearance_frame || frame_number > feature.disappearance_frame
             {
                 continue;
             }
 
-            // Determine if the current feature is the active one.
+            // The 'w' component is a tag sent to the GPU. The shader uses it to apply
+            // a different color or style to the active feature.
             let is_active = active_feature_id
                 .as_ref()
                 .map_or(false, |id| *id == feature.feature_id);
-
-            // Set the tag value. 2.0 for active, 1.0 for inactive.
             let w_component = if is_active { 2.0 } else { 1.0 };
 
+            // Find the structure of the feature at this specific frame.
             let current_snapshot = feature
                 .structure_snapshots
                 .iter()
@@ -564,12 +650,14 @@ impl Geco {
                     continue;
                 }
 
+                // Create a quick lookup map of point IDs to their animation paths.
                 let point_paths_map: std::collections::HashMap<_, _> = feature
                     .point_animation_paths
                     .iter()
                     .map(|p| (p.point_id.clone(), p))
                     .collect();
 
+                // Interpolate the positions of all points defined in the snapshot for the current frame.
                 let interpolated_points: Vec<Point> = snapshot
                     .ordered_point_ids
                     .iter()
@@ -581,6 +669,7 @@ impl Geco {
                     continue;
                 }
 
+                // Build line segments from the ordered, interpolated points.
                 for segment_points in interpolated_points.windows(2) {
                     let p1 = &segment_points[0];
                     let p2 = &segment_points[1];
@@ -589,15 +678,16 @@ impl Geco {
                         p1.x,
                         p1.y,
                         p1.z.unwrap_or(0.0),
-                        w_component, // Use the tag here
+                        w_component, // Pass the tag to the GPU
                         p2.x,
                         p2.y,
                         p2.z.unwrap_or(0.0),
-                        w_component, // And here
+                        w_component, // Pass the tag to the GPU
                     ]);
                     segment_count += 1;
                 }
 
+                // If the feature is a polygon, add a final segment to close the loop.
                 let feature_type = FeatureType::try_from(feature.r#type).unwrap_or_default();
                 if feature_type == FeatureType::Polygon {
                     if let (Some(first_point), Some(last_point)) =
@@ -607,11 +697,11 @@ impl Geco {
                             last_point.x,
                             last_point.y,
                             last_point.z.unwrap_or(0.0),
-                            w_component, // Use the tag here for the closing segment
+                            w_component,
                             first_point.x,
                             first_point.y,
                             first_point.z.unwrap_or(0.0),
-                            w_component, // And here
+                            w_component,
                         ]);
                         segment_count += 1;
                     }
