@@ -1,6 +1,7 @@
 # Klyja
 
-A web application for creating and managing animations on spherical maps.
+Klyja (contraction of Klymene and Japetus, the parents of the titan Atlas) is a worldbuilding tool inspired by gplates that aims to help mapmakers create techtonic plates histories.
+The goal is to give the users the hability to easily draw and animate tectonic plates on a sphere.
 
 ## Project Structure
 
