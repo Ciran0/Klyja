@@ -11,7 +11,7 @@ use crate::protobuf_gen::{
     Feature, FeatureStructureSnapshot, FeatureType, MapAnimation, Point, PointAnimationPath,
     PositionKeyframe,
 };
-use nalgebra::{Unit, Vector3}; // Make sure Unit is imported
+use nalgebra::{Rotation3, Unit, Vector3};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -599,6 +599,76 @@ impl Geco {
             feature_id,
             frame
         );
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = rotateFeature)]
+    pub fn rotate_feature(
+        &mut self,
+        feature_id: String,
+        rotation_point_x: f32,
+        rotation_point_y: f32,
+        rotation_point_z: f32,
+        angle_degrees: f32,
+        frame: i32,
+    ) -> Result<(), JsValue> {
+        // Find the feature to rotate
+        let feature = self
+            .animation_state
+            .features
+            .iter_mut()
+            .find(|f| f.feature_id == feature_id)
+            .ok_or_else(|| JsValue::from_str("Feature not found"))?;
+
+        // Create the rotation axis from the provided point
+        let rotation_axis = Unit::new_normalize(Vector3::new(
+            rotation_point_x,
+            rotation_point_y,
+            rotation_point_z,
+        ));
+
+        // Convert the angle from degrees to radians
+        let angle_radians = angle_degrees.to_radians();
+
+        // Create the rotation object
+        let rotation = Rotation3::from_axis_angle(&rotation_axis, angle_radians);
+
+        // Iterate over each point in the feature and add a new keyframe
+        for point_path in &mut feature.point_animation_paths {
+            // Get the last known position of the point
+            let last_position = point_path
+                .keyframes
+                .last()
+                .and_then(|kf| kf.position.clone())
+                .ok_or_else(|| {
+                    JsValue::from_str(&format!("Point {} has no keyframes", point_path.point_id))
+                })?;
+
+            // Create a vector from the point's position
+            let point_vec = Vector3::new(
+                last_position.x,
+                last_position.y,
+                last_position.z.unwrap_or(0.0),
+            );
+
+            // Apply the rotation
+            let rotated_vec = rotation * point_vec;
+
+            // Create a new keyframe with the rotated position
+            let new_keyframe = PositionKeyframe {
+                frame,
+                position: Some(Point {
+                    x: rotated_vec.x,
+                    y: rotated_vec.y,
+                    z: Some(rotated_vec.z),
+                }),
+            };
+
+            // Add the new keyframe and sort the keyframes by frame
+            point_path.keyframes.push(new_keyframe);
+            point_path.keyframes.sort_by_key(|kf| kf.frame);
+        }
+
         Ok(())
     }
 
