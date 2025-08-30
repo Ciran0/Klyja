@@ -13,7 +13,7 @@
             "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
         }
     }
-        </script>
+    </script>
 	<script type="module" src="/js/main.js"></script>
 	<style>
 		body {
@@ -119,9 +119,7 @@
 		<aside id="controls-panel">
 			<div id="user-auth-panel">
 				<div id="user-info-panel" class="hidden">
-					<p>
-						Welcome, <strong id="user-display-name"></strong>!
-					</p>
+					<p>Welcome, <strong id="user-display-name"></strong>!</p>
 					<button id="logout-button">Logout</button>
 				</div>
 				<div id="login-panel">
@@ -131,15 +129,12 @@
 			<hr>
 			<div id="my-animations-panel" class="hidden">
 				<h3>My Animations</h3>
-				<ul id="my-animations-list">
-				</ul>
+				<ul id="my-animations-list"></ul>
 			</div>
 			<h3>Animation Settings</h3>
 			<label for="anim-name-input">Animation Name:</label>
 			<input type="text" id="anim-name-input" placeholder="Untitled Animation">
-			<p style="font-size: 0.9em;">
-				WASM Name: <span id="wasm-name-span">Loading...</span>
-			</p>
+			<p style="font-size: 0.9em;">WASM Name: <span id="wasm-name-span">Loading...</span></p>
 			<label for="total-frames-input">Total Frames:</label>
 			<input type="number" id="total-frames-input" value="100" min="1">
 			<button id="set-total-frames-button">Set Total Frames</button>
@@ -153,40 +148,38 @@
 			<hr>
 			<h3>Feature Management</h3>
 			<h4>Features in Animation</h4>
-			<ul id="feature-list" style="height: 100px;
-                           overflow-y: auto;
-                           border: 1px solid #ccc;
-                           padding: 5px;
-                           list-style-type: none;
-                           margin:0">
+			<ul id="feature-list"
+				style="height: 100px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; list-style-type: none; margin:0">
 			</ul>
+			<p>Active Feature: <span id="active-feature-id-display">None</span></p>
 			<h4>Points in Active Feature</h4>
-			<ul id="point-list" style="height: 100px;
-                           overflow-y: auto;
-                           border: 1px solid #ccc;
-                           padding: 5px;
-                           list-style-type: none;
-                           margin:0">
+			<ul id="point-list"
+				style="height: 100px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; list-style-type: none; margin:0">
 			</ul>
-			<p>
-				Active Feature: <span id="active-feature-id-display">None</span>
-			</p>
-			<h4>Add to Active Feature</h4>
+			<p>Active Point: <span id="active-point-id-display">None</span></p>
+			<label for="point-id-input">Point ID (for keyframing):</label>
+			<input type="text" id="point-id-input" placeholder="Select from list above" readonly>
+			<hr>
+			<h4>Point Editing</h4>
 			<label for="click-to-add-toggle" style="cursor: pointer;">
 				<input type="checkbox" id="click-to-add-toggle">
 				Click on sphere to add points
 			</label>
-			<hr style="margin: 5px 0;">
-			<label for="point-id-input">Point ID (for keyframing):</label>
-			<input type="text" id="point-id-input" placeholder="Select from list above">
-			<p>
-				<em>Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z: N/A)</span></em>
-			</p>
+			<p><em>Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z: N/A)</span></em></p>
 			<button id="add-keyframe-button">Add Keyframe to Selected Point</button>
 			<hr>
-			<p>
-				Active Feature ID: <span id="active-feature-id-display">None</span>
-			</p>
+
+			<h3>Feature Rotation</h3>
+			<label for="rotation-mode-toggle" style="cursor: pointer;">
+				<input type="checkbox" id="rotation-mode-toggle">
+				Enable Rotation Mode
+			</label>
+			<p><em>Click on sphere to set rotation center.</em></p>
+			<p>Rotation Center: <span id="rotation-center-display">(Not Set)</span></p>
+			<label for="rotation-angle-input">Rotation Angle (degrees):</label>
+			<input type="number" id="rotation-angle-input" value="15" step="1">
+			<button id="rotate-feature-button">Rotate Active Feature</button>
+			<hr>
 			<h4>Create New Feature</h4>
 			<label for="feature-name-input">Feature Name:</label>
 			<input type="text" id="feature-name-input" placeholder="MyContinent">
@@ -200,16 +193,6 @@
 			<label for="feature-disappearance-frame-input">Disappearance Frame:</label>
 			<input type="number" id="feature-disappearance-frame-input" value="100" min="0">
 			<button id="create-feature-button">Create Feature & Set Active</button>
-			<h4>Add to Active Feature</h4>
-			<label for="point-id-input">Point ID (optional for new points):</label>
-			<input type="text" id="point-id-input" placeholder="p1">
-			<p>
-				<em>Sphere Click Coords: <span id="sphere-click-coords">(x: N/A, y: N/A, z:
-						N/A)</span></em>
-			</p>
-			<button id="add-point-button">Add Point (at current frame, using sphere click coords)</button>
-			<button id="add-keyframe-button">Add Keyframe (for Point ID, at current frame, using sphere
-				click coords)</button>
 			<hr>
 			<h3>Save / Load</h3>
 			<button id="save-button" disabled>Save Animation</button>
